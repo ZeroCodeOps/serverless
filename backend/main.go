@@ -116,4 +116,29 @@ func saveFile(file io.Reader, path string) error {
     return err
 }
 
-func buildHandler(w http.ResponseWriter, r *http.Request) {}
+func buildHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    name := strings.TrimPrefix(r.URL.Path, "/build/")
+
+    // Run func build
+    buildCmd := exec.Command("func", "build", name)
+    buildOutput, err := buildCmd.CombinedOutput()
+    if err != nil {
+        http.Error(w, fmt.Sprintf("Error building function: %s", err), http.StatusInternalServerError)
+        return
+    }
+
+    // Run func deploy
+    deployCmd := exec.Command("func", "deploy", name)
+    deployOutput, err := deployCmd.CombinedOutput()
+    if err != nil {
+        http.Error(w, fmt.Sprintf("Error deploying function: %s", err), http.StatusInternalServerError)
+        return
+    }
+
+    fmt.Fprintf(w, "Build and deploy successful.\nBuild output: %s\nDeploy output: %s", buildOutput, deployOutput)
+}
