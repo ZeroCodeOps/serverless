@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import DeploymentTable from '@/components/DeploymentTable';
+import { NewDeploymentDialog } from '@/components/NewDeploymentDialog';
 import { useAuth } from '@/utils/auth';
 import { mockDeployments } from '@/utils/mockData';
 import { Deployment } from '@/types';
@@ -12,6 +13,7 @@ import { NextPage } from 'next';
 const Dashboard: NextPage = () => {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isNewDeploymentDialogOpen, setIsNewDeploymentDialogOpen] = useState<boolean>(false);
   const isAuthenticated = useAuth();
   const router = useRouter();
 
@@ -25,20 +27,43 @@ const Dashboard: NextPage = () => {
     }
   }, [isAuthenticated]);
 
-  const handleCreateDeployment = (): void => {
+  const handleOpenNewDeploymentDialog = (): void => {
+    setIsNewDeploymentDialogOpen(true);
+  };
+
+  const handleCreateDeployment = (name: string, language: 'nodejs' | 'go' | 'python'): void => {
     const newId = String(deployments.length + 1);
     const newDeployment: Deployment = {
       id: newId,
-      name: `Deployment ${newId}`,
+      name: name,
       status: 'Stopped',
       createdAt: new Date().toISOString().split('T')[0],
+      language: language,
     };
     
     setDeployments([...deployments, newDeployment]);
+    setIsNewDeploymentDialogOpen(false);
+    
+    // Optionally, redirect to edit page for the new deployment
+    router.push(`/edit/${newId}`);
   };
 
   const handleDeleteDeployment = (id: string): void => {
     setDeployments(deployments.filter(deployment => deployment.id !== id));
+  };
+  
+  const handleToggleDeployment = (id: string): void => {
+    setDeployments(
+      deployments.map((d) => {
+        if (d.id === id) {
+          return {
+            ...d,
+            status: d.status === 'Running' ? 'Stopped' : 'Running',
+          };
+        }
+        return d;
+      })
+    );
   };
 
   if (!isAuthenticated) {
@@ -55,7 +80,7 @@ const Dashboard: NextPage = () => {
             <p className="text-muted-foreground">Manage your serverless functions</p>
           </div>
           <button
-            onClick={handleCreateDeployment}
+            onClick={handleOpenNewDeploymentDialog}
             className="btn btn-primary"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -74,9 +99,16 @@ const Dashboard: NextPage = () => {
           <DeploymentTable 
             deployments={deployments} 
             onDelete={handleDeleteDeployment} 
+            onToggle={handleToggleDeployment}
           />
         )}
       </main>
+      
+      <NewDeploymentDialog
+        isOpen={isNewDeploymentDialogOpen}
+        onConfirm={handleCreateDeployment}
+        onCancel={() => setIsNewDeploymentDialogOpen(false)}
+      />
     </div>
   );
 };

@@ -227,3 +227,34 @@
         @apply bg-background text-foreground;
     }
 }
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+    disabled:pointer-events-none disabled:opacity-50;
+    padding: 0.5rem 1rem; /* Add default padding to all buttons */
+  }
+
+  .btn-sm {
+    @apply h-9 px-3 py-2; /* Ensure small buttons have enough padding */
+  }
+
+  .btn-md {
+    @apply h-10 px-4 py-2; /* Enhance medium button padding */
+  }
+
+  .btn-lg {
+    @apply h-11 px-8 py-3; /* Enhance large button padding */
+  }
+
+  /* Ensure icon buttons have proper spacing */
+  .btn svg {
+    @apply mr-2;
+  }
+  
+  /* For buttons with only icons, ensure they're properly sized */
+  .btn-icon {
+    @apply p-2 h-9 w-9 flex items-center justify-center;
+  }
+}
