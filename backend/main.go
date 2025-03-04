@@ -6,6 +6,9 @@ import (
     "log"
 	"os/exec"
     "strings"
+	"io"
+	"os"
+	"path/filepath"
 	
 )
 func main() {
@@ -47,9 +50,6 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
     output, err := cmd.CombinedOutput()
 	log.Printf("Command Output: %s", output) // Log output for debugging
 
-
-
-
     if err != nil {
 		log.Printf("Error executing command: %v", err)
 
@@ -60,5 +60,60 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Fprintf(w, "Function created successfully: %s", output)
 }
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    name := strings.TrimPrefix(r.URL.Path, "/upload/")
+    name = strings.TrimSuffix(name, "/")
+
+    // Parse the multipart form
+    err := r.ParseMultipartForm(10 << 20) // 10 MB max
+    if err != nil {
+        http.Error(w, "Unable to parse form", http.StatusBadRequest)
+        return
+    }
+
+    // Handle code file
+    codeFile, _, err := r.FormFile("code")
+    if err != nil {
+        http.Error(w, "Error retrieving code file", http.StatusBadRequest)
+        return
+    }
+    defer codeFile.Close()
+
+    // Handle package file
+    packageFile, _, err := r.FormFile("package")
+    if err != nil {
+        http.Error(w, "Error retrieving package file", http.StatusBadRequest)
+        return
+    }
+    defer packageFile.Close()
+
+    // Save files
+    if err := saveFile(codeFile, filepath.Join(name, "main.go")); err != nil {
+        http.Error(w, "Error saving code file", http.StatusInternalServerError)
+        return
+    }
+
+    if err := saveFile(packageFile, filepath.Join(name, "package.json")); err != nil {
+        http.Error(w, "Error saving package file", http.StatusInternalServerError)
+        return
+    }
+
+    fmt.Fprintf(w, "Files uploaded successfully")
 }
+
+func saveFile(file io.Reader, path string) error {
+    out, err := os.Create(path)
+    if err != nil {
+        return err
+    }
+    defer out.Close()
+
+    _, err = io.Copy(out, file)
+    return err
+}
+
 func buildHandler(w http.ResponseWriter, r *http.Request) {}
