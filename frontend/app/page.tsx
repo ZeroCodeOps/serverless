@@ -39,7 +39,7 @@ const Login: NextPage = () => {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h1 className="mt-6 text-center text-3xl font-extrabold">
-            MinorV3 Platform
+            Serverless Platform
           </h1>
           <p className="mt-2 text-center text-sm text-muted-foreground">
             Sign in to your account
