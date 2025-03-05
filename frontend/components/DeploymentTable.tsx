@@ -60,7 +60,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
 
   const languageIcon = (language: string) => {
     switch(language) {
-      case 'nodejs':
+      case 'node':
         return (
           <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
