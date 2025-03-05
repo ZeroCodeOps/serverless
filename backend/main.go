@@ -12,6 +12,7 @@ import (
 	"strings"
 )
 
+// Deployment tracks basic deployment metadata
 type Deployment struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -20,6 +21,7 @@ type Deployment struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// In-memory list of deployments for demo
 var deployments []Deployment
 var deploymentCounter = 1
 
@@ -27,40 +29,48 @@ func main() {
 	http.HandleFunc("/create/", createHandler)
 	http.HandleFunc("/upload/", uploadHandler)
 	http.HandleFunc("/build/", buildHandler)
-	http.HandleFunc("/deployments/", deploymentsHandler)
+
+	// Instead of directly using deploymentsHandler on "/deployments/",
+	// we now use handleDeployments to multiplex between a list and a single deployment.
+	http.HandleFunc("/deployments/", handleDeployments)
 
 	fmt.Println("Server starting on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
+// handleDeployments multiplexes /deployments/ and /deployments/<name>/
+func handleDeployments(w http.ResponseWriter, r *http.Request) {
+	// If exact path is "/deployments/", list all deployments.
+	if r.URL.Path == "/deployments/" || r.URL.Path == "/deployments" {
+		deploymentsHandler(w, r)
+		return
+	}
+	// Otherwise, treat it as a request for a named deployment's details.
+	deploymentDetailHandler(w, r)
+}
+
+// createHandler - creates a new deployment via CLI func create -l <language> <name>
 func createHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received Request at:", r.URL.Path)
-
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 3 {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
-
-	language := parts[2] // Extract language
+	language := parts[2]
 	if language == "" {
 		http.Error(w, "Language is required", http.StatusBadRequest)
 		return
 	}
-
 	name := r.FormValue("name")
 	if name == "" {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
 	}
 
-	// fmt.Fprintf(w, "Function created for language: %s, name: %s", language, name)
-
 	dataDir := "./data"
-
-	// Create the data directory if it doesn't exist
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
-		err := os.Mkdir(dataDir, 0755) // Corrected permissions
+		err := os.Mkdir(dataDir, 0755)
 		if err != nil {
 			log.Printf("Error creating directory: %v", err)
 			http.Error(w, fmt.Sprintf("Error creating directory: %s", err), http.StatusInternalServerError)
@@ -68,28 +78,23 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Set the full path for the function directory
 	functionDir := filepath.Join(dataDir, name)
-
-	//Check if the function already exists
 	if _, err := os.Stat(functionDir); !os.IsNotExist(err) {
 		http.Error(w, "Function with that name already exists", http.StatusBadRequest)
 		return
 	}
 
 	cmd := exec.Command("func", "create", "-l", language, name)
-	cmd.Dir = dataDir // Set the working directory
+	cmd.Dir = dataDir
 	output, err := cmd.CombinedOutput()
-	log.Printf("Command Output: %s", output) // Log output for debugging
+	log.Printf("Command Output: %s", output)
 
 	if err != nil {
 		log.Printf("Error executing command: %v", err)
-
 		http.Error(w, fmt.Sprintf("Error creating function: %s\nOutput: %s", err, output), http.StatusInternalServerError)
 		return
 	}
 
-	//Create Deployment object
 	deploymentID := fmt.Sprintf("%d", deploymentCounter)
 	deployment := Deployment{
 		ID:        deploymentID,
@@ -102,9 +107,9 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 	deploymentCounter++
 
 	fmt.Fprintf(w, "Function created successfully: %s", output)
-
 }
 
+// uploadHandler - handles uploading code and package files
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -115,13 +120,12 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	name = strings.TrimSuffix(name, "/")
 
 	// Parse the multipart form
-	err := r.ParseMultipartForm(10 << 20) // 10 MB max
+	err := r.ParseMultipartForm(10 << 20) // 10 MB
 	if err != nil {
 		http.Error(w, "Unable to parse form", http.StatusBadRequest)
 		return
 	}
 
-	// Handle code file
 	codeFile, _, err := r.FormFile("code")
 	if err != nil {
 		http.Error(w, "Error retrieving code file", http.StatusBadRequest)
@@ -129,21 +133,31 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer codeFile.Close()
 
-	// Handle package file
 	packageFile, _, err := r.FormFile("package")
 	if err != nil {
 		http.Error(w, "Error retrieving package file", http.StatusBadRequest)
 		return
 	}
 	defer packageFile.Close()
-
-	// Save files
-	if err := saveFile(codeFile, filepath.Join(name, "main.go")); err != nil {
+	
+	var dep *Deployment
+	for i, d := range deployments {
+		if d.Name == name {
+			dep = &deployments[i]
+			break
+		}
+	}
+	if dep == nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	
+	codeFileName, packageFileName := getLanguageSpecificFiles(dep.Language)
+	if err := saveFile(codeFile, filepath.Join("data", name, codeFileName)); err != nil {
 		http.Error(w, "Error saving code file", http.StatusInternalServerError)
 		return
 	}
-
-	if err := saveFile(packageFile, filepath.Join(name, "package.json")); err != nil {
+	if err := saveFile(packageFile, filepath.Join("data", name, packageFileName)); err != nil {
 		http.Error(w, "Error saving package file", http.StatusInternalServerError)
 		return
 	}
@@ -157,11 +171,11 @@ func saveFile(file io.Reader, path string) error {
 		return err
 	}
 	defer out.Close()
-
 	_, err = io.Copy(out, file)
 	return err
 }
 
+// buildHandler - handles building and deploying via CLI func build and func deploy
 func buildHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -170,7 +184,6 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 
 	name := strings.TrimPrefix(r.URL.Path, "/build/")
 
-	// Run func build
 	buildCmd := exec.Command("func", "build", name)
 	buildCmd.Dir = "./data"
 	buildOutput, err := buildCmd.CombinedOutput()
@@ -179,7 +192,6 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run func deploy
 	deployCmd := exec.Command("func", "deploy", name)
 	deployCmd.Dir = "./data"
 	deployOutput, err := deployCmd.CombinedOutput()
@@ -187,21 +199,79 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Error deploying function: %s", err), http.StatusInternalServerError)
 		return
 	}
-	//Find the deployment
-	var deployment *Deployment
+
+	// Update the Status to Running if found
 	for i, d := range deployments {
 		if d.Name == name {
-			deployment = &deployments[i]
+			deployments[i].Status = "Running"
 			break
 		}
-	}
-	if deployment != nil {
-		deployment.Status = "Running"
 	}
 
 	fmt.Fprintf(w, "Build and deploy successful.\nBuild output: %s\nDeploy output: %s", buildOutput, deployOutput)
 }
+
+// deploymentsHandler - returns the list of all deployments
 func deploymentsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(deployments)
+}
+
+func getLanguageSpecificFiles(lang string) (string, string) {
+    switch lang {
+    case "python":
+        return "func.py", "requirements.txt"
+    case "go":
+        return "main.go", "go.mod"
+    default:
+        return "main.go", "package.json"
+    }
+}
+
+// deploymentDetailHandler - returns deployment details (metadata + code + package content) for /deployments/<name>/
+func deploymentDetailHandler(w http.ResponseWriter, r *http.Request) {
+	// Strip the "/deployments/" prefix to get the actual name
+	name := strings.TrimPrefix(r.URL.Path, "/deployments/")
+	// Also remove any trailing slash if present
+	name = strings.TrimSuffix(name, "/")
+
+	// Find the deployment by name
+	var dep *Deployment
+	for i, d := range deployments {
+		if d.Name == name {
+			dep = &deployments[i]
+			break
+		}
+	}
+	if dep == nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+
+	// Attempt to read language-specific code/package files
+	// Here we assume "main.go" and "package.json" for Go deployments
+	codeFile, pkgFile := getLanguageSpecificFiles(dep.Language)
+	codePath := filepath.Join("data", dep.Name, codeFile)
+	pkgPath := filepath.Join("data", dep.Name, pkgFile)
+
+	codeContent, _ := os.ReadFile(codePath)
+	pkgContent, _ := os.ReadFile(pkgPath)
+
+	// We can wrap deployment + file contents into a single response struct
+	type deploymentDetail struct {
+		Deployment
+		Code    string `json:"code,omitempty"`
+		Package string `json:"package,omitempty"`
+	}
+
+	detail := deploymentDetail{
+		Deployment: *dep,
+		Code:       string(codeContent),
+		Package:    string(pkgContent),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(detail); err != nil {
+		log.Printf("Error encoding JSON: %v", err)
+	}
 }

@@ -16,8 +16,8 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  const handleEdit = (id: string): void => {
-    router.push(`/edit/${id}`);
+  const handleEdit = (name: string): void => {
+    router.push(`/edit/${name}`);
   };
   
   const handleToggle = (id: string, e: React.MouseEvent): void => {
@@ -116,8 +116,8 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
             ) : (
               deployments.map((deployment) => (
                 <tr 
-                  key={deployment.id}
-                  onClick={() => handleEdit(deployment.id)}
+                  key={deployment.name}
+                  onClick={() => handleEdit(deployment.name)}
                   className="cursor-pointer"
                 >
                   <td>{deployment.id}</td>
@@ -136,13 +136,13 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
                         {deployment.status === 'Running' ? 'Stop' : 'Start'}
                       </button>
                       <button
-                        onClick={() => handleEdit(deployment.id)}
+                        onClick={() => handleEdit(deployment.name)}
                         className="btn btn-sm btn-outline"
                       >
                         Edit
                       </button>
                       <button
-                        onClick={(e) => handleDeleteClick(deployment.id, e)}
+                        onClick={(e) => handleDeleteClick(deployment.name, e)}
                         className="btn btn-sm btn-destructive"
                       >
                         Delete

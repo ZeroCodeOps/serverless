@@ -25,7 +25,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ language, value, onChange }) =>
   return (
     <div className="code-editor-container">
       <Editor
-        height="400px"
+        height="700px"
         language={language}
         value={value}
         onChange={(value: any) => onChange(value || '')}

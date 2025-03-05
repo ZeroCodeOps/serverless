@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MinorV3 Platform",
+  title: "Serverless Platform",
   description: "Manage your serverless functions effortlessly",
 };
 
