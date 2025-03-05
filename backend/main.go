@@ -187,7 +187,8 @@ func saveFile(file io.Reader, path string) error {
 	return err
 }
 
-// buildHandler - handles building and deploying via CLI func build and func deploy
+// buildHandler - updates the status to "Building", and runs build/deploy in a separate goroutine.
+// When build+deploy completes successfully, sets the status to "Running."
 func buildHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -195,32 +196,53 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := strings.TrimPrefix(r.URL.Path, "/build/")
+	name = strings.TrimSuffix(name, "/")
 
-	buildCmd := exec.Command("func", "build", name)
-	buildCmd.Dir = "./data"
-	buildOutput, err := buildCmd.CombinedOutput()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error building function: %s", err), http.StatusInternalServerError)
-		return
-	}
-
-	deployCmd := exec.Command("func", "deploy", name)
-	deployCmd.Dir = "./data"
-	deployOutput, err := deployCmd.CombinedOutput()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error deploying function: %s", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Update the Status to Running if found
-	for i, d := range deployments {
-		if d.Name == name {
-			deployments[i].Status = "Running"
+	// Find the deployment
+	var dep *Deployment
+	for i := range deployments {
+		if deployments[i].Name == name {
+			dep = &deployments[i]
 			break
 		}
 	}
+	if dep == nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
 
-	fmt.Fprintf(w, "Build and deploy successful.\nBuild output: %s\nDeploy output: %s", buildOutput, deployOutput)
+	// Set status to "Building"
+	dep.Status = "Building"
+
+	// Run build and deploy in a separate goroutine to avoid blocking the request
+	go func(d *Deployment, fnName string) {
+		// Step 1: Build
+		buildCmd := exec.Command("func", "build", fnName)
+		buildCmd.Dir = "./data"
+		buildOutput, err := buildCmd.CombinedOutput()
+		if err != nil {
+			log.Printf("[ERROR] Build for %s failed: %v\nOutput:\n%s", fnName, err, string(buildOutput))
+			d.Status = "Error"
+			return
+		}
+		log.Printf("[INFO] Build output for %s:\n%s", fnName, string(buildOutput))
+
+		
+		d.Status = "Stopped"
+
+		// If you want to parse some output to find a port, do it here. Usually the port is discovered on "func run".
+		// For example:
+		/*
+		if strings.Contains(string(deployOutput), "Running on host port ") {
+			// parse out the port if desired
+			d.Port = ...
+		}
+		*/
+	}(dep, name)
+
+	// Immediately return a quick message
+	w.WriteHeader(http.StatusAccepted)
+	fmt.Fprintf(w, "Build process started for '%s'. Status set to Building.\n", name)
 }
 
 // startHandler - starts the function using "func run" in a separate goroutine
@@ -247,8 +269,7 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-	// Prepare the command: e.g. func run <name> --port <port>
+	// Prepare the command: e.g. func run <name>
 	cmd := exec.Command("func", "run")
 	cmd.Dir = filepath.Join("./data", name)
 
@@ -273,6 +294,7 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 				outputChunk := string(buf[:n])
 				log.Printf("[func run output for %s]: %s", name, outputChunk)
 
+				// Attempt to detect the port from the output
 				if strings.Contains(outputChunk, "Running on host port ") {
 					parts := strings.Split(outputChunk, "Running on host port ")
 					if len(parts) > 1 {
@@ -300,7 +322,6 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Start the command asynchronously in its own goroutine
 	if err := cmd.Start(); err != nil {
 		http.Error(w, fmt.Sprintf("Error starting function: %v", err), http.StatusInternalServerError)
 		return
@@ -313,11 +334,11 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Update the deployment status and port
 	dep.Status = "Running"
-	dep.Port = port
+	// We may not know the port yet until it logs “Running on host port ...”
+	// (done above in the goroutine)
 
-	// Wait for it in a separate goroutine so it doesn't block this request
+	// Wait in a separate goroutine
 	go func() {
-		// When the process ends, we can clean up or do other tasks
 		err := cmd.Wait()
 		if err != nil {
 			log.Printf("Function [%s] exited with error: %v", name, err)
@@ -333,7 +354,6 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 		dep.Port = ""
 	}()
 
-	// Return a JSON with the port or just a text message
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"url": "http://localhost:" + dep.Port,
@@ -402,7 +422,7 @@ func getLanguageSpecificFiles(lang string) (string, string) {
 	}
 }
 
-// deploymentDetailHandler - returns deployment details (metadata + code + package content) for /deployments/<name>/
+// deploymentDetailHandler - returns deployment details (metadata + code + package content)
 func deploymentDetailHandler(w http.ResponseWriter, r *http.Request) {
 	// Strip the "/deployments/" prefix to get the actual name
 	name := strings.TrimPrefix(r.URL.Path, "/deployments/")
