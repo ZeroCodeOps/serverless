@@ -107,7 +107,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
             </tr>
           </thead>
           <tbody className="table-body">
-            {deployments.length === 0 ? (
+            {!deployments|| deployments.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center py-8 text-muted-foreground">
                   No deployments found

@@ -9,6 +9,7 @@ import { useAuth } from '@/utils/auth';
 import { mockDeployments } from '@/utils/mockData';
 import { Deployment } from '@/types';
 import { NextPage } from 'next';
+import { BACKEND_URL } from '@/lib/utils';
 
 const Dashboard: NextPage = () => {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
@@ -19,9 +20,14 @@ const Dashboard: NextPage = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
+      const fetchDeployments = async () => {
+        const response = await fetch(`${BACKEND_URL}/deployments/`);
+        const data = await response.json();
+        setDeployments(data);
+      };
       // Simulate API call
       setTimeout(() => {
-        setDeployments(mockDeployments);
+        fetchDeployments();
         setIsLoading(false);
       }, 500);
     }
@@ -31,7 +37,7 @@ const Dashboard: NextPage = () => {
     setIsNewDeploymentDialogOpen(true);
   };
 
-  const handleCreateDeployment = (name: string, language: 'nodejs' | 'go' | 'python'): void => {
+  const handleCreateDeployment = (name: string, language: 'node' | 'go' | 'python'): void => {
     const newId = String(deployments.length + 1);
     const newDeployment: Deployment = {
       id: newId,

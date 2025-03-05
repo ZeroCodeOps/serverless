@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 interface NewDeploymentDialogProps {
   isOpen: boolean;
-  onConfirm: (name: string, language: 'nodejs' | 'go' | 'python') => void;
+  onConfirm: (name: string, language: 'node' | 'go' | 'python') => void;
   onCancel: () => void;
 }
 
@@ -12,7 +12,7 @@ export const NewDeploymentDialog: React.FC<NewDeploymentDialogProps> = ({
   onCancel
 }) => {
   const [name, setName] = useState<string>('');
-  const [language, setLanguage] = useState<'nodejs' | 'go' | 'python'>('nodejs');
+  const [language, setLanguage] = useState<'node' | 'go' | 'python'>('node');
   const [error, setError] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -36,7 +36,7 @@ export const NewDeploymentDialog: React.FC<NewDeploymentDialogProps> = ({
     
     onConfirm(name, language);
     setName(''); // Reset form after submission
-    setLanguage('nodejs'); // Reset to default
+    setLanguage('node'); // Reset to default
     setError(''); // Clear any errors
   };
   
@@ -81,7 +81,7 @@ export const NewDeploymentDialog: React.FC<NewDeploymentDialogProps> = ({
                 id="language-select"
                 className="input w-full"
                 value={language}
-                onChange={(e) => setLanguage(e.target.value as 'nodejs' | 'go' | 'python')}
+                onChange={(e) => setLanguage(e.target.value as 'node' | 'go' | 'python')}
               >
                 <option value="nodejs">Node.js</option>
                 <option value="go">Go</option>

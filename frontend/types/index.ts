@@ -3,7 +3,7 @@ export interface Deployment {
   name: string;
   status: 'Running' | 'Stopped' | 'Failed' | 'Building';
   createdAt: string;
-  language: 'nodejs' | 'go' | 'python';
+  language: 'node' | 'go' | 'python';
 }
 
 export interface DeploymentFiles {
