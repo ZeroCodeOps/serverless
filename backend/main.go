@@ -222,9 +222,9 @@ func getLanguageSpecificFiles(lang string) (string, string) {
     case "python":
         return "func.py", "requirements.txt"
     case "go":
-        return "main.go", "go.mod"
+        return "handle.go", "go.mod"
     default:
-        return "main.go", "package.json"
+        return "index.js", "package.json"
     }
 }
 

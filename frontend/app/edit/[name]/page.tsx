@@ -180,7 +180,7 @@ const EditDeployment: NextPage = () => {
               </span>
             </div>
             <CodeEditor
-              language={deployment?.language}
+              language={deployment?.language === "node" ? "javascript" : deployment?.language}
               value={codeFile}
               onChange={setCodeFile}
             />
