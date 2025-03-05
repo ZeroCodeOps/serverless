@@ -62,11 +62,22 @@ const Dashboard: NextPage = () => {
   const handleDeleteDeployment = (id: string): void => {
     setDeployments(deployments.filter((deployment) => deployment.id !== id));
   };
+  
+  const handleBuildDeployment = async (id: string) => {
+    const response = await fetch(`${BACKEND_URL}/build/${id}`, {
+      method: "POST",
+    });
+    if (response.ok) {
+      setRefresh(!refresh);
+    } else {
+      alert(response.statusText);
+    }
+  };
 
   const handleToggleDeployment = (id: string): void => {
     setDeployments(
       deployments.map((d) => {
-        if (d.id === id) {
+        if (d.name === id) {
           return {
             ...d,
             status: d.status === "Running" ? "Stopped" : "Running",
@@ -128,6 +139,7 @@ const Dashboard: NextPage = () => {
             deployments={deployments}
             onDelete={handleDeleteDeployment}
             onToggle={handleToggleDeployment}
+            onBuild={handleBuildDeployment}
           />
         )}
       </main>

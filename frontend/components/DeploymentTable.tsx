@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Deployment } from '../types';
 
@@ -6,12 +6,14 @@ interface DeploymentTableProps {
   deployments: Deployment[];
   onDelete: (id: string) => void;
   onToggle: (id: string) => void;
+  onBuild: (id: string) => void;
 }
 
-const DeploymentTable: React.FC<DeploymentTableProps> = ({ 
-  deployments, 
+const DeploymentTable: React.FC<DeploymentTableProps> = ({
+  deployments,
   onDelete,
-  onToggle
+  onToggle,
+  onBuild
 }) => {
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -19,17 +21,22 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
   const handleEdit = (name: string): void => {
     router.push(`/edit/${name}`);
   };
-  
-  const handleToggle = (id: string, e: React.MouseEvent): void => {
+
+  const handleBuild = (name: string, e: React.MouseEvent): void => {
     e.stopPropagation();
-    onToggle(id);
+    onBuild(name);
   };
-  
+
+  const handleToggle = (name: string, e: React.MouseEvent): void => {
+    e.stopPropagation();
+    onToggle(name);
+  };
+
   const handleDeleteClick = (id: string, e: React.MouseEvent): void => {
     e.stopPropagation();
     setConfirmDelete(id);
   };
-  
+
   const handleConfirmDelete = (): void => {
     if (confirmDelete) {
       onDelete(confirmDelete);
@@ -103,6 +110,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
               <th>Language</th>
               <th>Status</th>
               <th>Created</th>
+              <th>URL</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
@@ -115,7 +123,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
               </tr>
             ) : (
               deployments.map((deployment) => (
-                <tr 
+                <tr
                   key={deployment.name}
                   onClick={() => handleEdit(deployment.name)}
                   className="cursor-pointer"
@@ -128,12 +136,18 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
                   <td className="text-right">
                     <div className="flex justify-end gap-2">
                       <button
-                        onClick={(e) => handleToggle(deployment.id, e)}
+                        onClick={(e) => handleToggle(deployment.name, e)}
                         className={`btn btn-sm ${
                           deployment.status === 'Running' ? 'btn-secondary' : 'btn-primary'
                         }`}
                       >
                         {deployment.status === 'Running' ? 'Stop' : 'Start'}
+                      </button>
+                      <button
+                        onClick={(e) => handleBuild(deployment.name, e) }
+                        className="btn btn-sm btn-outline"
+                      >
+                        Build
                       </button>
                       <button
                         onClick={() => handleEdit(deployment.name)}
@@ -155,7 +169,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
           </tbody>
         </table>
       </div>
-      
+
       {confirmDelete && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-lg shadow-lg w-full max-w-md p-6">
