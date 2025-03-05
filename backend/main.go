@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -11,16 +12,28 @@ import (
 	"strings"
 )
 
+type Deployment struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
+}
+
+var deployments []Deployment
+var deploymentCounter = 1
+
 func main() {
 	http.HandleFunc("/create/", createHandler)
 	http.HandleFunc("/upload/", uploadHandler)
 	http.HandleFunc("/build/", buildHandler)
+	http.HandleFunc("/deployments/", deploymentsHandler)
 
 	fmt.Println("Server starting on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
-func createHandler(w http.ResponseWriter, r *http.Request) {
 
+func createHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received Request at:", r.URL.Path)
 
 	parts := strings.Split(r.URL.Path, "/")
@@ -29,7 +42,7 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	language := parts[1] // Extract language
+	language := parts[2] // Extract language
 	if language == "" {
 		http.Error(w, "Language is required", http.StatusBadRequest)
 		return
@@ -43,7 +56,7 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 
 	// fmt.Fprintf(w, "Function created for language: %s, name: %s", language, name)
 
-	dataDir := "data"
+	dataDir := "./data"
 
 	// Create the data directory if it doesn't exist
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
@@ -65,6 +78,7 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := exec.Command("func", "create", "-l", language, name)
+	cmd.Dir = dataDir // Set the working directory
 	output, err := cmd.CombinedOutput()
 	log.Printf("Command Output: %s", output) // Log output for debugging
 
@@ -75,7 +89,20 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//Create Deployment object
+	deploymentID := fmt.Sprintf("%d", deploymentCounter)
+	deployment := Deployment{
+		ID:        deploymentID,
+		Name:      name,
+		Language:  language,
+		Status:    "Stopped",
+		CreatedAt: "TODO",
+	}
+	deployments = append(deployments, deployment)
+	deploymentCounter++
+
 	fmt.Fprintf(w, "Function created successfully: %s", output)
+
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +172,7 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Run func build
 	buildCmd := exec.Command("func", "build", name)
+	buildCmd.Dir = "./data"
 	buildOutput, err := buildCmd.CombinedOutput()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error building function: %s", err), http.StatusInternalServerError)
@@ -153,11 +181,27 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Run func deploy
 	deployCmd := exec.Command("func", "deploy", name)
+	deployCmd.Dir = "./data"
 	deployOutput, err := deployCmd.CombinedOutput()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error deploying function: %s", err), http.StatusInternalServerError)
 		return
 	}
+	//Find the deployment
+	var deployment *Deployment
+	for i, d := range deployments {
+		if d.Name == name {
+			deployment = &deployments[i]
+			break
+		}
+	}
+	if deployment != nil {
+		deployment.Status = "Running"
+	}
 
 	fmt.Fprintf(w, "Build and deploy successful.\nBuild output: %s\nDeploy output: %s", buildOutput, deployOutput)
+}
+func deploymentsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(deployments)
 }
