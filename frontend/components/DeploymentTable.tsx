@@ -32,9 +32,9 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
     onToggle(name);
   };
 
-  const handleDeleteClick = (id: string, e: React.MouseEvent): void => {
+  const handleDeleteClick = (name: string, e: React.MouseEvent): void => {
     e.stopPropagation();
-    setConfirmDelete(id);
+    setConfirmDelete(name);
   };
 
   const handleConfirmDelete = (): void => {
@@ -149,7 +149,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
             {!deployments || deployments.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No deployments found
@@ -168,14 +168,14 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
                   <td>{statusBadge(deployment.status)}</td>
                   <td>{deployment.createdAt}</td>
                   <td>
-                    {deployment.status == "Running" && (
+                    {deployment.status === "Running" && deployment.port && (
                       <a
-                        href={`http://localhost:46789/`}
+                        href={`http://localhost:${deployment.port}`}
                         target="_blank"
                         rel="noreferrer"
                         className="link"
                       >
-                        localhost:46789
+                        localhost:{deployment.port}
                       </a>
                     )}
                   </td>

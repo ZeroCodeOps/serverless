@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+
+	"main/db"
 )
 
 // Deployment tracks basic deployment metadata
@@ -24,7 +27,6 @@ type Deployment struct {
 }
 
 // In-memory list of deployments for demo
-var deployments []Deployment
 var deploymentCounter = 1
 
 // runningCmds will track the active "func run" processes by function name
@@ -33,21 +35,47 @@ var runningCmds = make(map[string]*exec.Cmd)
 // To avoid race conditions on runningCmds, wrap in a mutex
 var cmdMutex sync.Mutex
 
+// CORS middleware
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Call the next handler
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
-	http.HandleFunc("/create/", createHandler)
-	http.HandleFunc("/upload/", uploadHandler)
-	http.HandleFunc("/build/", buildHandler)
+	// Initialize database
+	if err := db.InitDB(); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
 
-	// Adding the start and stop handlers
-	http.HandleFunc("/start/", startHandler)
-	http.HandleFunc("/stop/", stopHandler)
+	// Create a new mux
+	mux := http.NewServeMux()
 
-	// Instead of directly using deploymentsHandler on "/deployments/",
-	// we now use handleDeployments to multiplex between a list and a single deployment.
-	http.HandleFunc("/deployments/", handleDeployments)
+	// Register handlers
+	mux.HandleFunc("/create/", createHandler)
+	mux.HandleFunc("/upload/", uploadHandler)
+	mux.HandleFunc("/build/", buildHandler)
+	mux.HandleFunc("/start/", startHandler)
+	mux.HandleFunc("/stop/", stopHandler)
+	mux.HandleFunc("/deployments/", handleDeployments)
+
+	// Wrap the mux with CORS middleware
+	handler := corsMiddleware(mux)
 
 	fmt.Println("Server starting on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }
 
 // handleDeployments multiplexes /deployments/ and /deployments/<name>/
@@ -80,6 +108,17 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if deployment already exists
+	existingDeployment, err := db.GetDeployment(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error checking existing deployment: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if existingDeployment != nil {
+		http.Error(w, "Function with that name already exists", http.StatusBadRequest)
+		return
+	}
+
 	dataDir := "./data"
 	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
 		err := os.Mkdir(dataDir, 0755)
@@ -92,7 +131,7 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 
 	functionDir := filepath.Join(dataDir, name)
 	if _, err := os.Stat(functionDir); !os.IsNotExist(err) {
-		http.Error(w, "Function with that name already exists", http.StatusBadRequest)
+		http.Error(w, "Function directory already exists", http.StatusBadRequest)
 		return
 	}
 
@@ -108,14 +147,19 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deploymentID := fmt.Sprintf("%d", deploymentCounter)
-	deployment := Deployment{
+	deployment := db.Deployment{
 		ID:        deploymentID,
 		Name:      name,
 		Language:  language,
 		Status:    "Stopped",
-		CreatedAt: "TODO",
+		CreatedAt: time.Now().Format(time.RFC3339),
 	}
-	deployments = append(deployments, deployment)
+
+	if err := db.CreateDeployment(deployment); err != nil {
+		http.Error(w, fmt.Sprintf("Error saving deployment: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	deploymentCounter++
 
 	fmt.Fprintf(w, "Function created successfully: %s", output)
@@ -152,19 +196,17 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer packageFile.Close()
 
-	var dep *Deployment
-	for i, d := range deployments {
-		if d.Name == name {
-			dep = &deployments[i]
-			break
-		}
+	deployment, err := db.GetDeployment(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving deployment: %v", err), http.StatusInternalServerError)
+		return
 	}
-	if dep == nil {
+	if deployment == nil {
 		http.Error(w, "Deployment not found", http.StatusNotFound)
 		return
 	}
 
-	codeFileName, packageFileName := getLanguageSpecificFiles(dep.Language)
+	codeFileName, packageFileName := getLanguageSpecificFiles(deployment.Language)
 	if err := saveFile(codeFile, filepath.Join("data", name, codeFileName)); err != nil {
 		http.Error(w, "Error saving code file", http.StatusInternalServerError)
 		return
@@ -199,23 +241,25 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 	name = strings.TrimSuffix(name, "/")
 
 	// Find the deployment
-	var dep *Deployment
-	for i := range deployments {
-		if deployments[i].Name == name {
-			dep = &deployments[i]
-			break
-		}
+	deployment, err := db.GetDeployment(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving deployment: %v", err), http.StatusInternalServerError)
+		return
 	}
-	if dep == nil {
+	if deployment == nil {
 		http.Error(w, "Deployment not found", http.StatusNotFound)
 		return
 	}
 
 	// Set status to "Building"
-	dep.Status = "Building"
+	deployment.Status = "Building"
+	if err := db.UpdateDeployment(*deployment); err != nil {
+		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	// Run build and deploy in a separate goroutine to avoid blocking the request
-	go func(d *Deployment, fnName string) {
+	go func(d *db.Deployment, fnName string) {
 		// Step 1: Build
 		buildCmd := exec.Command("func", "build", fnName)
 		buildCmd.Dir = "./data"
@@ -223,22 +267,18 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("[ERROR] Build for %s failed: %v\nOutput:\n%s", fnName, err, string(buildOutput))
 			d.Status = "Error"
+			if err := db.UpdateDeployment(*d); err != nil {
+				log.Printf("Error updating deployment status: %v", err)
+			}
 			return
 		}
 		log.Printf("[INFO] Build output for %s:\n%s", fnName, string(buildOutput))
 
-		
 		d.Status = "Stopped"
-
-		// If you want to parse some output to find a port, do it here. Usually the port is discovered on "func run".
-		// For example:
-		/*
-		if strings.Contains(string(deployOutput), "Running on host port ") {
-			// parse out the port if desired
-			d.Port = ...
+		if err := db.UpdateDeployment(*d); err != nil {
+			log.Printf("Error updating deployment status: %v", err)
 		}
-		*/
-	}(dep, name)
+	}(deployment, name)
 
 	// Immediately return a quick message
 	w.WriteHeader(http.StatusAccepted)
@@ -251,20 +291,18 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 	name = strings.TrimSuffix(name, "/")
 
 	// Find the deployment
-	var dep *Deployment
-	for i, d := range deployments {
-		if d.Name == name {
-			dep = &deployments[i]
-			break
-		}
+	deployment, err := db.GetDeployment(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving deployment: %v", err), http.StatusInternalServerError)
+		return
 	}
-	if dep == nil {
+	if deployment == nil {
 		http.Error(w, "Deployment not found", http.StatusNotFound)
 		return
 	}
 
-	// If it's already running, return early (or choose your own policy)
-	if dep.Status == "Running" {
+	// If it's already running, return early
+	if deployment.Status == "Running" {
 		http.Error(w, "Function is already started", http.StatusBadRequest)
 		return
 	}
@@ -306,7 +344,10 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 								return r < '0' || r > '9'
 							})
 							cmdMutex.Lock()
-							dep.Port = foundPort
+							deployment.Port = foundPort
+							if err := db.UpdateDeployment(*deployment); err != nil {
+								log.Printf("Error updating deployment port: %v", err)
+							}
 							cmdMutex.Unlock()
 							log.Printf("[%s] Detected port: %s", name, foundPort)
 						}
@@ -332,10 +373,12 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 	runningCmds[name] = cmd
 	cmdMutex.Unlock()
 
-	// Update the deployment status and port
-	dep.Status = "Running"
-	// We may not know the port yet until it logs “Running on host port ...”
-	// (done above in the goroutine)
+	// Update the deployment status
+	deployment.Status = "Running"
+	if err := db.UpdateDeployment(*deployment); err != nil {
+		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	// Wait in a separate goroutine
 	go func() {
@@ -350,13 +393,16 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 		delete(runningCmds, name)
 		cmdMutex.Unlock()
 
-		dep.Status = "Stopped"
-		dep.Port = ""
+		deployment.Status = "Stopped"
+		deployment.Port = ""
+		if err := db.UpdateDeployment(*deployment); err != nil {
+			log.Printf("Error updating deployment status: %v", err)
+		}
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"url": "http://localhost:" + dep.Port,
+		"url": "http://localhost:" + deployment.Port,
 	})
 }
 
@@ -366,14 +412,12 @@ func stopHandler(w http.ResponseWriter, r *http.Request) {
 	name = strings.TrimSuffix(name, "/")
 
 	// Find the deployment
-	var dep *Deployment
-	for i, d := range deployments {
-		if d.Name == name {
-			dep = &deployments[i]
-			break
-		}
+	deployment, err := db.GetDeployment(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving deployment: %v", err), http.StatusInternalServerError)
+		return
 	}
-	if dep == nil {
+	if deployment == nil {
 		http.Error(w, "Deployment not found", http.StatusNotFound)
 		return
 	}
@@ -399,14 +443,24 @@ func stopHandler(w http.ResponseWriter, r *http.Request) {
 	cmdMutex.Unlock()
 
 	// Update status
-	dep.Status = "Stopped"
-	dep.Port = ""
+	deployment.Status = "Stopped"
+	deployment.Port = ""
+	if err := db.UpdateDeployment(*deployment); err != nil {
+		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	fmt.Fprintf(w, "Function %s stopped.", name)
 }
 
 // deploymentsHandler - returns the list of all deployments
 func deploymentsHandler(w http.ResponseWriter, r *http.Request) {
+	deployments, err := db.GetAllDeployments()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving deployments: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(deployments)
 }
@@ -424,41 +478,36 @@ func getLanguageSpecificFiles(lang string) (string, string) {
 
 // deploymentDetailHandler - returns deployment details (metadata + code + package content)
 func deploymentDetailHandler(w http.ResponseWriter, r *http.Request) {
-	// Strip the "/deployments/" prefix to get the actual name
 	name := strings.TrimPrefix(r.URL.Path, "/deployments/")
-	// Also remove any trailing slash if present
 	name = strings.TrimSuffix(name, "/")
 
-	// Find the deployment by name
-	var dep *Deployment
-	for i, d := range deployments {
-		if d.Name == name {
-			dep = &deployments[i]
-			break
-		}
+	deployment, err := db.GetDeployment(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving deployment: %v", err), http.StatusInternalServerError)
+		return
 	}
-	if dep == nil {
+	if deployment == nil {
 		http.Error(w, "Deployment not found", http.StatusNotFound)
 		return
 	}
 
 	// Attempt to read language-specific code/package files
-	codeFile, pkgFile := getLanguageSpecificFiles(dep.Language)
-	codePath := filepath.Join("data", dep.Name, codeFile)
-	pkgPath := filepath.Join("data", dep.Name, pkgFile)
+	codeFile, pkgFile := getLanguageSpecificFiles(deployment.Language)
+	codePath := filepath.Join("data", deployment.Name, codeFile)
+	pkgPath := filepath.Join("data", deployment.Name, pkgFile)
 
 	codeContent, _ := os.ReadFile(codePath)
 	pkgContent, _ := os.ReadFile(pkgPath)
 
 	// We can wrap deployment + file contents into a single response struct
 	type deploymentDetail struct {
-		Deployment
+		db.Deployment
 		Code    string `json:"code,omitempty"`
 		Package string `json:"package,omitempty"`
 	}
 
 	detail := deploymentDetail{
-		Deployment: *dep,
+		Deployment: *deployment,
 		Code:       string(codeContent),
 		Package:    string(pkgContent),
 	}

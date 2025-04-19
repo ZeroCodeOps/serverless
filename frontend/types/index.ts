@@ -4,6 +4,7 @@ export interface Deployment {
   status: 'Running' | 'Stopped' | 'Failed' | 'Building';
   createdAt: string;
   language: 'node' | 'go' | 'python';
+  port?: string;
 }
 
 export interface DeploymentFiles {

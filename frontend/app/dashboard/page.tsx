@@ -6,7 +6,6 @@ import Header from "@/components/Header";
 import DeploymentTable from "@/components/DeploymentTable";
 import { NewDeploymentDialog } from "@/components/NewDeploymentDialog";
 import { useAuth } from "@/utils/auth";
-import { mockDeployments } from "@/utils/mockData";
 import { Deployment } from "@/types";
 import { NextPage } from "next";
 import { BACKEND_URL } from "@/lib/utils";
@@ -22,15 +21,20 @@ const Dashboard: NextPage = () => {
   useEffect(() => {
     if (isAuthenticated) {
       const fetchDeployments = async () => {
-        const response = await fetch(`${BACKEND_URL}/deployments/`);
-        const data = await response.json();
-        setDeployments(data);
+        try {
+          const response = await fetch(`${BACKEND_URL}/deployments/`);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+          setDeployments(data);
+        } catch (error) {
+          console.error("Error fetching deployments:", error);
+        } finally {
+          setIsLoading(false);
+        }
       };
-      // Simulate API call
-      setTimeout(() => {
-        fetchDeployments();
-        setIsLoading(false);
-      }, 500);
+      fetchDeployments();
     }
   }, [isAuthenticated, refresh]);
 
@@ -42,50 +46,72 @@ const Dashboard: NextPage = () => {
     name: string,
     language: "node" | "go" | "python",
   ) => {
-    const response = await fetch(`${BACKEND_URL}/create/${language}`, {
-      method: "POST",
-      body: new URLSearchParams({
-        name,
-      }),
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    });
-    if (response.ok) {
+    try {
+      const response = await fetch(`${BACKEND_URL}/create/${language}`, {
+        method: "POST",
+        body: new URLSearchParams({
+          name,
+        }),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || response.statusText);
+      }
       setRefresh(!refresh);
-    } else {
-      alert(response.statusText);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to create deployment");
+    } finally {
+      setIsNewDeploymentDialogOpen(false);
     }
-    setIsNewDeploymentDialogOpen(false);
   };
 
-  const handleDeleteDeployment = (id: string): void => {
-    setDeployments(deployments.filter((deployment) => deployment.id !== id));
+  const handleDeleteDeployment = async (name: string) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/deployments/${name}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to delete deployment: ${response.statusText}`);
+      }
+      setRefresh(!refresh);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete deployment");
+    }
   };
   
-  const handleBuildDeployment = async (id: string) => {
-    const response = await fetch(`${BACKEND_URL}/build/${id}`, {
-      method: "POST",
-    });
-    if (response.ok) {
+  const handleBuildDeployment = async (name: string) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/build/${name}`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to build deployment: ${response.statusText}`);
+      }
       setRefresh(!refresh);
-    } else {
-      alert(response.statusText);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to build deployment");
     }
   };
 
-  const handleToggleDeployment = (id: string): void => {
-    setDeployments(
-      deployments.map((d) => {
-        if (d.name === id) {
-          return {
-            ...d,
-            status: d.status === "Running" ? "Stopped" : "Running",
-          };
-        }
-        return d;
-      }),
-    );
+  const handleToggleDeployment = async (name: string) => {
+    try {
+      const deployment = deployments.find(d => d.name === name);
+      if (!deployment) return;
+
+      const endpoint = deployment.status === "Running" ? "stop" : "start";
+      const response = await fetch(`${BACKEND_URL}/${endpoint}/${name}`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to ${endpoint} deployment: ${response.statusText}`);
+      }
+      setRefresh(!refresh);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to toggle deployment");
+    }
   };
 
   if (!isAuthenticated) {
