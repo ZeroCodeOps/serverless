@@ -1,7 +1,7 @@
 export interface Deployment {
   id: string;
   name: string;
-  status: 'Running' | 'Stopped' | 'Failed' | 'Building';
+  status: 'Running' | 'Stopped' | 'Failed' | 'Building' | 'Built';
   createdAt: string;
   language: 'node' | 'go' | 'python';
   port?: string;

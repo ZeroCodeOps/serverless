@@ -9,8 +9,10 @@ import { useAuth } from "@/utils/auth";
 import { Deployment } from "@/types";
 import { NextPage } from "next";
 import { BACKEND_URL } from "@/lib/utils";
+import { useWebSocket } from "@/utils/websocket";
 
 const Dashboard: NextPage = () => {
+  const { deployments: wsDeployments } = useWebSocket();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [refresh, setRefresh] = useState<boolean>(false);
@@ -37,6 +39,13 @@ const Dashboard: NextPage = () => {
       fetchDeployments();
     }
   }, [isAuthenticated, refresh]);
+
+  // Update deployments when WebSocket updates arrive
+  useEffect(() => {
+    if (wsDeployments.length > 0) {
+      setDeployments(wsDeployments);
+    }
+  }, [wsDeployments]);
 
   const handleOpenNewDeploymentDialog = (): void => {
     setIsNewDeploymentDialogOpen(true);

@@ -76,6 +76,12 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
             Building
           </span>
         );
+      case "Built":
+        return (
+          <span className="badge bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800">
+            Built
+          </span>
+        );
       default:
         return <span className="badge badge-neutral">Stopped</span>;
     }

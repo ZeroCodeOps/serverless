@@ -118,7 +118,7 @@ type Deployment struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Language  string `json:"language"`
-	Status    string `json:"status"`
+	Status    string `json:"status"` // Can be: "Stopped", "Running", "Failed", "Building", "Built"
 	CreatedAt string `json:"createdAt"`
 	Port      string `json:"port,omitempty"`
 } 

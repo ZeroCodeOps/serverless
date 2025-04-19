@@ -1,20 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
+import { WebSocketProvider } from "@/utils/websocket";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Serverless Platform",
-  description: "Manage your serverless functions effortlessly",
+  title: "Serverless Functions",
+  description: "Deploy and manage serverless functions",
 };
 
 export default function RootLayout({
@@ -24,10 +17,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className={inter.className}>
+        <WebSocketProvider>
+          {children}
+        </WebSocketProvider>
       </body>
       <script
         dangerouslySetInnerHTML={{

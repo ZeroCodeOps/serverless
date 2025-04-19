@@ -9,11 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"main/db"
+
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 // Deployment tracks basic deployment metadata
@@ -26,14 +30,73 @@ type Deployment struct {
 	Port      string `json:"port,omitempty"` // Store the port if running
 }
 
-// In-memory list of deployments for demo
-var deploymentCounter = 1
-
 // runningCmds will track the active "func run" processes by function name
 var runningCmds = make(map[string]*exec.Cmd)
 
 // To avoid race conditions on runningCmds, wrap in a mutex
 var cmdMutex sync.Mutex
+
+// WebSocket upgrader
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins
+	},
+}
+
+// WebSocket clients
+var clients = make(map[*websocket.Conn]bool)
+var clientsMutex sync.Mutex
+
+// Broadcast message to all connected clients
+func broadcastMessage(message interface{}) {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+
+	msg, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Error marshaling message: %v", err)
+		return
+	}
+
+	for client := range clients {
+		err := client.WriteMessage(websocket.TextMessage, msg)
+		if err != nil {
+			log.Printf("Error sending message to client: %v", err)
+			client.Close()
+			delete(clients, client)
+		}
+	}
+}
+
+// WebSocket handler
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Error upgrading connection: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	// Add client to the list
+	clientsMutex.Lock()
+	clients[conn] = true
+	clientsMutex.Unlock()
+
+	// Remove client when they disconnect
+	defer func() {
+		clientsMutex.Lock()
+		delete(clients, conn)
+		clientsMutex.Unlock()
+	}()
+
+	// Keep the connection alive
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+	}
+}
 
 // CORS middleware
 func corsMiddleware(next http.Handler) http.Handler {
@@ -64,6 +127,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Register handlers
+	mux.HandleFunc("/ws", wsHandler)
 	mux.HandleFunc("/create/", createHandler)
 	mux.HandleFunc("/upload/", uploadHandler)
 	mux.HandleFunc("/build/", buildHandler)
@@ -146,7 +210,8 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deploymentID := fmt.Sprintf("%d", deploymentCounter)
+	// Generate a new UUID for the deployment ID
+	deploymentID := uuid.New().String()
 	deployment := db.Deployment{
 		ID:        deploymentID,
 		Name:      name,
@@ -159,8 +224,6 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Error saving deployment: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	deploymentCounter++
 
 	fmt.Fprintf(w, "Function created successfully: %s", output)
 }
@@ -230,7 +293,7 @@ func saveFile(file io.Reader, path string) error {
 }
 
 // buildHandler - updates the status to "Building", and runs build/deploy in a separate goroutine.
-// When build+deploy completes successfully, sets the status to "Running."
+// When build+deploy completes successfully, sets the status to "Built."
 func buildHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -261,23 +324,34 @@ func buildHandler(w http.ResponseWriter, r *http.Request) {
 	// Run build and deploy in a separate goroutine to avoid blocking the request
 	go func(d *db.Deployment, fnName string) {
 		// Step 1: Build
-		buildCmd := exec.Command("func", "build", fnName)
-		buildCmd.Dir = "./data"
+		buildCmd := exec.Command("func", "build", fnName, "--registry", "localhost:5000")
+		buildCmd.Dir = filepath.Join("./data", fnName)
 		buildOutput, err := buildCmd.CombinedOutput()
 		if err != nil {
 			log.Printf("[ERROR] Build for %s failed: %v\nOutput:\n%s", fnName, err, string(buildOutput))
-			d.Status = "Error"
+			d.Status = "Failed"
 			if err := db.UpdateDeployment(*d); err != nil {
 				log.Printf("Error updating deployment status: %v", err)
 			}
+			// Broadcast status update
+			broadcastMessage(map[string]interface{}{
+				"type": "status_update",
+				"data": d,
+			})
 			return
 		}
 		log.Printf("[INFO] Build output for %s:\n%s", fnName, string(buildOutput))
 
-		d.Status = "Stopped"
+		// Update status to "Built" after successful build
+		d.Status = "Built"
 		if err := db.UpdateDeployment(*d); err != nil {
 			log.Printf("Error updating deployment status: %v", err)
 		}
+		// Broadcast status update
+		broadcastMessage(map[string]interface{}{
+			"type": "status_update",
+			"data": d,
+		})
 	}(deployment, name)
 
 	// Immediately return a quick message
@@ -308,7 +382,7 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Prepare the command: e.g. func run <name>
-	cmd := exec.Command("func", "run")
+	cmd := exec.Command("func", "run", "--registry", "localhost:5000")
 	cmd.Dir = filepath.Join("./data", name)
 
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -323,6 +397,9 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create a channel to receive the port number
+	portChan := make(chan string, 1)
+
 	go func() {
 		reader := io.MultiReader(stdoutPipe, stderrPipe)
 		buf := make([]byte, 1024)
@@ -334,23 +411,19 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 
 				// Attempt to detect the port from the output
 				if strings.Contains(outputChunk, "Running on host port ") {
-					parts := strings.Split(outputChunk, "Running on host port ")
-					if len(parts) > 1 {
-						fields := strings.Fields(parts[1])
-						if len(fields) > 0 {
-							foundPort := fields[0]
-							// strip any trailing punctuation
-							foundPort = strings.TrimRightFunc(foundPort, func(r rune) bool {
-								return r < '0' || r > '9'
-							})
-							cmdMutex.Lock()
-							deployment.Port = foundPort
-							if err := db.UpdateDeployment(*deployment); err != nil {
-								log.Printf("Error updating deployment port: %v", err)
-							}
-							cmdMutex.Unlock()
-							log.Printf("[%s] Detected port: %s", name, foundPort)
+					// Extract port number using regex
+					re := regexp.MustCompile(`Running on host port (\d+)`)
+					matches := re.FindStringSubmatch(outputChunk)
+					if len(matches) > 1 {
+						foundPort := matches[1]
+						portChan <- foundPort
+						cmdMutex.Lock()
+						deployment.Port = foundPort
+						if err := db.UpdateDeployment(*deployment); err != nil {
+							log.Printf("Error updating deployment port: %v", err)
 						}
+						cmdMutex.Unlock()
+						log.Printf("[%s] Detected port: %s", name, foundPort)
 					}
 				}
 			}
@@ -378,6 +451,37 @@ func startHandler(w http.ResponseWriter, r *http.Request) {
 	if err := db.UpdateDeployment(*deployment); err != nil {
 		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Broadcast status update
+	broadcastMessage(map[string]interface{}{
+		"type": "status_update",
+		"data": deployment,
+	})
+
+	// Wait for the port to be detected with a timeout
+	var port string
+	select {
+	case port = <-portChan:
+		// Port detected, update deployment
+		deployment.Port = port
+		if err := db.UpdateDeployment(*deployment); err != nil {
+			log.Printf("Error updating deployment port: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		// Timeout after 10 seconds
+		log.Printf("Timeout waiting for port detection for %s", name)
+		// Update status to indicate timeout
+		deployment.Status = "Failed"
+		deployment.Port = ""
+		if err := db.UpdateDeployment(*deployment); err != nil {
+			log.Printf("Error updating deployment status after timeout: %v", err)
+		}
+		// Broadcast status update
+		broadcastMessage(map[string]interface{}{
+			"type": "status_update",
+			"data": deployment,
+		})
 	}
 
 	// Wait in a separate goroutine
@@ -449,6 +553,12 @@ func stopHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Broadcast status update
+	broadcastMessage(map[string]interface{}{
+		"type": "status_update",
+		"data": deployment,
+	})
 
 	fmt.Fprintf(w, "Function %s stopped.", name)
 }
