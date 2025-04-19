@@ -12,40 +12,12 @@ import { BACKEND_URL } from "@/lib/utils";
 import { useWebSocket } from "@/utils/websocket";
 
 const Dashboard: NextPage = () => {
-  const { deployments: wsDeployments } = useWebSocket();
-  const [deployments, setDeployments] = useState<Deployment[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const { deployments } = useWebSocket();
   const [isNewDeploymentDialogOpen, setIsNewDeploymentDialogOpen] =
     useState<boolean>(false);
   const isAuthenticated = useAuth();
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      const fetchDeployments = async () => {
-        try {
-          const response = await fetch(`${BACKEND_URL}/deployments/`);
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          const data = await response.json();
-          setDeployments(data);
-        } catch (error) {
-          console.error("Error fetching deployments:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      fetchDeployments();
-    }
-  }, [isAuthenticated]);
-
-  // Update deployments when WebSocket updates arrive
-  useEffect(() => {
-    if (wsDeployments.length > 0) {
-      setDeployments(wsDeployments);
-    }
-  }, [wsDeployments]);
-
+  
   const handleOpenNewDeploymentDialog = (): void => {
     setIsNewDeploymentDialogOpen(true);
   };
@@ -159,19 +131,14 @@ const Dashboard: NextPage = () => {
           </button>
         </div>
 
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            <p className="mt-4 text-muted-foreground">Loading deployments...</p>
-          </div>
-        ) : (
+        
           <DeploymentTable
             deployments={deployments}
             onDelete={handleDeleteDeployment}
             onToggle={handleToggleDeployment}
             onBuild={handleBuildDeployment}
           />
-        )}
+        
       </main>
 
       <NewDeploymentDialog

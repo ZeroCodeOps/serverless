@@ -30,88 +30,90 @@ func InitDB() error {
 	}
 
 	// Create deployments table
-	createTableSQL := `
-	CREATE TABLE IF NOT EXISTS deployments (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL UNIQUE,
-		language TEXT NOT NULL,
-		status TEXT NOT NULL,
-		created_at TEXT NOT NULL,
-		port TEXT
-	);`
-
-	_, err = DB.Exec(createTableSQL)
+	_, err = DB.Exec(`
+		CREATE TABLE IF NOT EXISTS deployments (
+			id TEXT PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			language TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			port TEXT,
+			built BOOLEAN NOT NULL DEFAULT FALSE
+		)
+	`)
 	if err != nil {
-		return fmt.Errorf("error creating table: %v", err)
+		return fmt.Errorf("error creating deployments table: %v", err)
 	}
 
 	return nil
 }
 
 // CreateDeployment inserts a new deployment into the database
-func CreateDeployment(deployment types.Deployment) error {
-	query := `
-	INSERT INTO deployments (id, name, language, status, created_at, port)
-	VALUES (?, ?, ?, ?, ?, ?)`
-
-	_, err := DB.Exec(query, deployment.ID, deployment.Name, deployment.Language,
-		deployment.Status, deployment.CreatedAt, deployment.Port)
-	return err
+func CreateDeployment(d types.Deployment) error {
+	_, err := DB.Exec(`
+		INSERT INTO deployments (id, name, language, status, created_at, port, built)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, d.ID, d.Name, d.Language, d.Status, d.CreatedAt, d.Port, d.Built)
+	if err != nil {
+		return fmt.Errorf("error creating deployment: %v", err)
+	}
+	return nil
 }
 
 // GetDeployment retrieves a deployment by name
 func GetDeployment(name string) (*types.Deployment, error) {
-	query := `
-	SELECT id, name, language, status, created_at, port
-	FROM deployments
-	WHERE name = ?`
-
-	row := DB.QueryRow(query, name)
-	deployment := &types.Deployment{}
-	err := row.Scan(&deployment.ID, &deployment.Name, &deployment.Language,
-		&deployment.Status, &deployment.CreatedAt, &deployment.Port)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+	var d types.Deployment
+	err := DB.QueryRow(`
+		SELECT id, name, language, status, created_at, port, built
+		FROM deployments
+		WHERE name = ?
+	`, name).Scan(&d.ID, &d.Name, &d.Language, &d.Status, &d.CreatedAt, &d.Port, &d.Built)
 	if err != nil {
-		return nil, err
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting deployment: %v", err)
 	}
-	return deployment, nil
+	return &d, nil
 }
 
 // UpdateDeployment updates a deployment's status and port
-func UpdateDeployment(deployment types.Deployment) error {
-	query := `
-	UPDATE deployments
-	SET status = ?, port = ?
-	WHERE name = ?`
-
-	_, err := DB.Exec(query, deployment.Status, deployment.Port, deployment.Name)
-	return err
+func UpdateDeployment(d types.Deployment) error {
+	_, err := DB.Exec(`
+		UPDATE deployments
+		SET status = ?, port = ?, built = ?
+		WHERE name = ?
+	`, d.Status, d.Port, d.Built, d.Name)
+	if err != nil {
+		return fmt.Errorf("error updating deployment: %v", err)
+	}
+	return nil
 }
 
 // GetAllDeployments retrieves all deployments
 func GetAllDeployments() ([]types.Deployment, error) {
-	query := `
-	SELECT id, name, language, status, created_at, port
-	FROM deployments`
-
-	rows, err := DB.Query(query)
+	rows, err := DB.Query(`
+		SELECT id, name, language, status, created_at, port, built
+		FROM deployments
+		ORDER BY created_at DESC
+	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error querying deployments: %v", err)
 	}
 	defer rows.Close()
 
 	var deployments []types.Deployment
 	for rows.Next() {
 		var d types.Deployment
-		err := rows.Scan(&d.ID, &d.Name, &d.Language, &d.Status, &d.CreatedAt, &d.Port)
+		err := rows.Scan(&d.ID, &d.Name, &d.Language, &d.Status, &d.CreatedAt, &d.Port, &d.Built)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error scanning deployment: %v", err)
 		}
 		deployments = append(deployments, d)
 	}
-
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating deployments: %v", err)
+	}
 	return deployments, nil
 }
 
@@ -123,4 +125,5 @@ type Deployment struct {
 	Status    string `json:"status"` // Can be: "Stopped", "Running", "Failed", "Building", "Built"
 	CreatedAt string `json:"createdAt"`
 	Port      string `json:"port,omitempty"`
+	Built     bool   `json:"built"`
 }

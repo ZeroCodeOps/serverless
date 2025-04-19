@@ -240,7 +240,7 @@ func (h *Handlers) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error saving package file", http.StatusInternalServerError)
 		return
 	}
-
+	deployment.Built = false
 	fmt.Fprintf(w, "Files uploaded successfully")
 }
 
@@ -309,7 +309,8 @@ func (h *Handlers) buildHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[INFO] Build output for %s:\n%s", fnName, string(buildOutput))
 
 		// Update status to "Built" after successful build
-		d.Status = "Built"
+		d.Status = "Stopped"
+		d.Built = true
 		if err := db.UpdateDeployment(*d); err != nil {
 			log.Printf("Error updating deployment status: %v", err)
 		}
@@ -346,8 +347,27 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if the function is built
+	if !deployment.Built {
+		http.Error(w, "Function needs to be built first", http.StatusBadRequest)
+		return
+	}
+
+	// Update status to Starting
+	deployment.Status = "Starting"
+	if err := db.UpdateDeployment(*deployment); err != nil {
+		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Broadcast starting status
+	h.broadcastMessage(map[string]interface{}{
+		"type": "status_update",
+		"data": deployment,
+	})
+
 	// Prepare the command: e.g. func run <name>
-	cmd := exec.Command("func", "run", "--registry", h.config.Registry.Address)
+	cmd := exec.Command("func", "run", name, "--registry", h.config.Registry.Address)
 	cmd.Dir = filepath.Join(h.config.Function.DataDir, name)
 
 	// Set up pipes for stdout and stderr
@@ -363,8 +383,26 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create a channel to receive the port number
-	portChan := make(chan string, 1)
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		// Update status to Failed
+		deployment.Status = "Failed"
+		if err := db.UpdateDeployment(*deployment); err != nil {
+			log.Printf("Error updating deployment status: %v", err)
+		}
+		// Broadcast failed status
+		h.broadcastMessage(map[string]interface{}{
+			"type": "status_update",
+			"data": deployment,
+		})
+		http.Error(w, fmt.Sprintf("Error starting function: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Store the cmd in our runningCmds map so we can stop it later
+	h.cmdMux.Lock()
+	h.runningCmds[name] = cmd
+	h.cmdMux.Unlock()
 
 	// Start reading output in a goroutine
 	go func() {
@@ -383,7 +421,6 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 					matches := re.FindStringSubmatch(outputChunk)
 					if len(matches) > 1 {
 						foundPort := matches[1]
-						portChan <- foundPort
 						h.cmdMux.Lock()
 						deployment.Port = foundPort
 						deployment.Status = "Running"
@@ -391,6 +428,11 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 							log.Printf("Error updating deployment port: %v", err)
 						}
 						h.cmdMux.Unlock()
+						// Broadcast status update with port
+						h.broadcastMessage(map[string]interface{}{
+							"type": "status_update",
+							"data": deployment,
+						})
 						log.Printf("[%s] Detected port: %s", name, foundPort)
 					}
 				}
@@ -403,56 +445,6 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		http.Error(w, fmt.Sprintf("Error starting function: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Store the cmd in our runningCmds map so we can stop it later
-	h.cmdMux.Lock()
-	h.runningCmds[name] = cmd
-	h.cmdMux.Unlock()
-
-	// Wait for the port to be detected with a timeout
-	var port string
-	select {
-	case port = <-portChan:
-		// Port detected, update deployment
-		deployment.Port = port
-		deployment.Status = "Running"
-		if err := db.UpdateDeployment(*deployment); err != nil {
-			log.Printf("Error updating deployment port: %v", err)
-		}
-		// Broadcast status update with port
-		h.broadcastMessage(map[string]interface{}{
-			"type": "status_update",
-			"data": deployment,
-		})
-	case <-time.After(h.config.Function.PortDetectionTimeout):
-		// Timeout after configured duration
-		log.Printf("Timeout waiting for port detection for %s", name)
-		// Update status to indicate timeout
-		deployment.Status = "Failed"
-		deployment.Port = ""
-		if err := db.UpdateDeployment(*deployment); err != nil {
-			log.Printf("Error updating deployment status after timeout: %v", err)
-		}
-		// Broadcast status update
-		h.broadcastMessage(map[string]interface{}{
-			"type": "status_update",
-			"data": deployment,
-		})
-		// Kill the process if it's still running
-		h.cmdMux.Lock()
-		if cmd, exists := h.runningCmds[name]; exists {
-			cmd.Process.Kill()
-			delete(h.runningCmds, name)
-		}
-		h.cmdMux.Unlock()
-		return
-	}
 
 	// Wait for the process to finish in a separate goroutine
 	go func() {
@@ -479,10 +471,8 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"url": "http://localhost:" + deployment.Port,
-	})
+	// Return 200 immediately
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handlers) stopHandler(w http.ResponseWriter, r *http.Request) {
@@ -500,19 +490,37 @@ func (h *Handlers) stopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if the function is running
+	if deployment.Status != "Running" {
+		http.Error(w, "Function is not running", http.StatusBadRequest)
+		return
+	}
+
 	h.cmdMux.Lock()
 	cmd, exists := h.runningCmds[name]
 	h.cmdMux.Unlock()
 
 	if !exists {
-		http.Error(w, "Function is not running", http.StatusBadRequest)
+		// If command not found but status is Running, update status to Stopped
+		deployment.Status = "Stopped"
+		deployment.Port = ""
+		if err := db.UpdateDeployment(*deployment); err != nil {
+			http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
+			return
+		}
+		// Broadcast status update
+		h.broadcastMessage(map[string]interface{}{
+			"type": "status_update",
+			"data": deployment,
+		})
+		fmt.Fprintf(w, "Function %s stopped.", name)
 		return
 	}
 
 	// Kill the process
 	if err := cmd.Process.Kill(); err != nil {
-		http.Error(w, fmt.Sprintf("Error stopping function: %v", err), http.StatusInternalServerError)
-		return
+		log.Printf("Error killing process: %v", err)
+		// Continue with cleanup even if kill fails
 	}
 
 	// Clean up

@@ -8,6 +8,7 @@ type Deployment struct {
 	Status    string `json:"status"`
 	CreatedAt string `json:"createdAt"`
 	Port      string `json:"port,omitempty"` // Store the port if running
+	Built     bool   `json:"built"`
 }
 
 // DeploymentDetail includes the deployment metadata plus code and package content

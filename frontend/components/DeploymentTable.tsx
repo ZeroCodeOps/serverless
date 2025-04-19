@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Deployment } from "../types";
+import { PuffLoader } from "react-spinners";
 
 interface DeploymentTableProps {
   deployments: Deployment[];
@@ -76,15 +77,46 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
             Building
           </span>
         );
-      case "Built":
-        return (
-          <span className="badge bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800">
-            Built
-          </span>
-        );
       default:
         return <span className="badge badge-neutral">Stopped</span>;
     }
+  };
+
+  const buildStatus = (built: boolean) => {
+    if (built) {
+      return (
+        <span className="text-green-600 dark:text-green-400">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fillRule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </span>
+      );
+    }
+    return (
+      <span className="text-gray-400 dark:text-gray-500">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-5 w-5"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path
+            fillRule="evenodd"
+            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </span>
+    );
   };
 
   const languageIcon = (language: string) => {
@@ -146,6 +178,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
               <th>Name</th>
               <th>Language</th>
               <th>Status</th>
+              <th>Built</th>
               <th>Created</th>
               <th>URL</th>
               <th className="text-right">Actions</th>
@@ -155,7 +188,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
             {!deployments || deployments.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center py-8 text-muted-foreground"
                 >
                   No deployments found
@@ -172,6 +205,7 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
                   <td className="font-medium">{deployment.name}</td>
                   <td>{languageIcon(deployment.language)}</td>
                   <td>{statusBadge(deployment.status)}</td>
+                  <td className="text-center">{buildStatus(deployment.built)}</td>
                   <td>{deployment.createdAt}</td>
                   <td>
                     {deployment.status === "Running" && deployment.port && (
@@ -187,16 +221,26 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
                   </td>
                   <td className="text-right">
                     <div className="flex justify-end gap-2">
-                      <button
-                        onClick={(e) => handleToggle(deployment.name, e)}
-                        className={`btn btn-sm ${
-                          deployment.status === "Running"
-                            ? "btn-secondary"
-                            : "btn-primary"
-                        }`}
-                      >
-                        {deployment.status === "Running" ? "Stop" : "Start"}
-                      </button>
+                      <div className="relative group">
+                        <button
+                          onClick={(e) => handleToggle(deployment.name, e)}
+                          disabled={!deployment.built && deployment.status !== "Running"}
+                          className={`btn btn-sm ${
+                            deployment.status === "Running"
+                              ? "btn-secondary"
+                              : deployment.built
+                              ? "btn-primary"
+                              : "btn-disabled"
+                          }`}
+                        >
+                          {deployment.status === "Running" ? "Stop" : <div className="flex items-center gap-2">Start {deployment.status=="Starting" && <PuffLoader size={10} />}</div>}
+                        </button>
+                        {!deployment.built && deployment.status !== "Running" && (
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                            Build first
+                          </div>
+                        )}
+                      </div>
                       <button
                         onClick={(e) => handleBuild(deployment.name, e)}
                         className="btn btn-sm btn-outline"

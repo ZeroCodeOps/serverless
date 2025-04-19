@@ -1,4 +1,4 @@
-import { useRouter } from 'next/navigation';
+"use client";
 import { useEffect } from 'react';
 
 // Simple auth utility functions
