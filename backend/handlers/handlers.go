@@ -148,6 +148,22 @@ func (h *Handlers) createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Generate a new UUID for the deployment ID
+	deploymentID := uuid.New().String()
+	deployment := types.Deployment{
+		ID:        deploymentID,
+		Name:      name,
+		Language:  language,
+		Status:    "Creating",
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	// Broadcast creation status
+	h.broadcastMessage(map[string]interface{}{
+		"type": "status_update",
+		"data": deployment,
+	})
+
 	cmd := exec.Command("func", "create", "-l", language, name)
 	cmd.Dir = dataDir
 	output, err := cmd.CombinedOutput()
@@ -159,20 +175,18 @@ func (h *Handlers) createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate a new UUID for the deployment ID
-	deploymentID := uuid.New().String()
-	deployment := types.Deployment{
-		ID:        deploymentID,
-		Name:      name,
-		Language:  language,
-		Status:    "Stopped",
-		CreatedAt: time.Now().Format(time.RFC3339),
-	}
-
+	// Update status to Stopped after creation
+	deployment.Status = "Stopped"
 	if err := db.CreateDeployment(deployment); err != nil {
 		http.Error(w, fmt.Sprintf("Error saving deployment: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Broadcast final status
+	h.broadcastMessage(map[string]interface{}{
+		"type": "status_update",
+		"data": deployment,
+	})
 
 	fmt.Fprintf(w, "Function created successfully: %s", output)
 }
@@ -267,6 +281,12 @@ func (h *Handlers) buildHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Broadcast building status
+	h.broadcastMessage(map[string]interface{}{
+		"type": "status_update",
+		"data": deployment,
+	})
+
 	// Run build and deploy in a separate goroutine to avoid blocking the request
 	go func(d *types.Deployment, fnName string) {
 		// Step 1: Build
@@ -330,6 +350,7 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command("func", "run", "--registry", h.config.Registry.Address)
 	cmd.Dir = filepath.Join(h.config.Function.DataDir, name)
 
+	// Set up pipes for stdout and stderr
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating stdout pipe: %v", err), http.StatusInternalServerError)
@@ -345,6 +366,7 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 	// Create a channel to receive the port number
 	portChan := make(chan string, 1)
 
+	// Start reading output in a goroutine
 	go func() {
 		reader := io.MultiReader(stdoutPipe, stderrPipe)
 		buf := make([]byte, 1024)
@@ -364,6 +386,7 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 						portChan <- foundPort
 						h.cmdMux.Lock()
 						deployment.Port = foundPort
+						deployment.Status = "Running"
 						if err := db.UpdateDeployment(*deployment); err != nil {
 							log.Printf("Error updating deployment port: %v", err)
 						}
@@ -381,6 +404,7 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Start the command
 	if err := cmd.Start(); err != nil {
 		http.Error(w, fmt.Sprintf("Error starting function: %v", err), http.StatusInternalServerError)
 		return
@@ -391,28 +415,21 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 	h.runningCmds[name] = cmd
 	h.cmdMux.Unlock()
 
-	// Update the deployment status
-	deployment.Status = "Running"
-	if err := db.UpdateDeployment(*deployment); err != nil {
-		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Broadcast status update
-	h.broadcastMessage(map[string]interface{}{
-		"type": "status_update",
-		"data": deployment,
-	})
-
 	// Wait for the port to be detected with a timeout
 	var port string
 	select {
 	case port = <-portChan:
 		// Port detected, update deployment
 		deployment.Port = port
+		deployment.Status = "Running"
 		if err := db.UpdateDeployment(*deployment); err != nil {
 			log.Printf("Error updating deployment port: %v", err)
 		}
+		// Broadcast status update with port
+		h.broadcastMessage(map[string]interface{}{
+			"type": "status_update",
+			"data": deployment,
+		})
 	case <-time.After(h.config.Function.PortDetectionTimeout):
 		// Timeout after configured duration
 		log.Printf("Timeout waiting for port detection for %s", name)
@@ -427,9 +444,17 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 			"type": "status_update",
 			"data": deployment,
 		})
+		// Kill the process if it's still running
+		h.cmdMux.Lock()
+		if cmd, exists := h.runningCmds[name]; exists {
+			cmd.Process.Kill()
+			delete(h.runningCmds, name)
+		}
+		h.cmdMux.Unlock()
+		return
 	}
 
-	// Wait in a separate goroutine
+	// Wait for the process to finish in a separate goroutine
 	go func() {
 		err := cmd.Wait()
 		if err != nil {
@@ -447,6 +472,11 @@ func (h *Handlers) startHandler(w http.ResponseWriter, r *http.Request) {
 		if err := db.UpdateDeployment(*deployment); err != nil {
 			log.Printf("Error updating deployment status: %v", err)
 		}
+		// Broadcast final status update
+		h.broadcastMessage(map[string]interface{}{
+			"type": "status_update",
+			"data": deployment,
+		})
 	}()
 
 	w.Header().Set("Content-Type", "application/json")

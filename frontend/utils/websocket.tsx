@@ -1,64 +1,104 @@
 "use client";
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { Deployment } from '@/types';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { Deployment } from '../types';
+import { showErrorAlert, showInfoAlert, showSuccessAlert, showWarningAlert, showConfirmDialog } from './alert';
 
 interface WebSocketContextType {
   deployments: Deployment[];
   updateDeployment: (deployment: Deployment) => void;
+  ws: WebSocket | null;
+  isConnected: boolean;
+  showAlert: (type: 'success' | 'error' | 'info' | 'warning', message: string) => void;
+  showConfirmDialog: (title: string, text: string) => Promise<boolean>;
 }
 
-const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
+const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
-export function WebSocketProvider({ children }: { children: ReactNode }) {
+export const useWebSocket = () => {
+  const context = useContext(WebSocketContext);
+  if (!context) {
+    throw new Error('useWebSocket must be used within a WebSocketProvider');
+  }
+  return context;
+};
+
+interface WebSocketProviderProps {
+  children: ReactNode;
+}
+
+export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     const socket = new WebSocket('ws://localhost:8080/ws');
-    setWs(socket);
-
-    socket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === 'status_update') {
-        updateDeployment(message.data);
-      }
+    
+    socket.onopen = () => {
+      setIsConnected(true);
+      showSuccessAlert('Connected to server');
     };
 
     socket.onclose = () => {
-      // Attempt to reconnect after 5 seconds
-      setTimeout(() => {
-        setWs(null);
-      }, 5000);
+      setIsConnected(false);
+      showErrorAlert('Disconnected from server');
     };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'status_update') {
+        updateDeployment(data.data);
+      }
+    };
+
+    setWs(socket);
 
     return () => {
       socket.close();
     };
   }, []);
 
-  const updateDeployment = (updatedDeployment: Deployment) => {
-    setDeployments((prevDeployments) => {
-      const index = prevDeployments.findIndex(d => d.name === updatedDeployment.name);
+  const updateDeployment = (deployment: Deployment) => {
+    setDeployments((prev) => {
+      const index = prev.findIndex((d) => d.id === deployment.id);
       if (index === -1) {
-        return [...prevDeployments, updatedDeployment];
+        return [...prev, deployment];
       }
-      const newDeployments = [...prevDeployments];
-      newDeployments[index] = updatedDeployment;
+      const newDeployments = [...prev];
+      newDeployments[index] = deployment;
       return newDeployments;
     });
   };
 
+  const showAlert = (type: 'success' | 'error' | 'info' | 'warning', message: string) => {
+    switch (type) {
+      case 'success':
+        showSuccessAlert(message);
+        break;
+      case 'error':
+        showErrorAlert(message);
+        break;
+      case 'info':
+        showInfoAlert(message);
+        break;
+      case 'warning':
+        showWarningAlert(message);
+        break;
+    }
+  };
+
+  const value: WebSocketContextType = {
+    deployments,
+    updateDeployment,
+    ws,
+    isConnected,
+    showAlert,
+    showConfirmDialog,
+  };
+
   return (
-    <WebSocketContext.Provider value={{ deployments, updateDeployment }}>
+    <WebSocketContext.Provider value={value}>
       {children}
     </WebSocketContext.Provider>
   );
-}
-
-export function useWebSocket() {
-  const context = useContext(WebSocketContext);
-  if (context === undefined) {
-    throw new Error('useWebSocket must be used within a WebSocketProvider');
-  }
-  return context;
-} 
+}; 

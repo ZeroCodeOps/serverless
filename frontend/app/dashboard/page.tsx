@@ -15,7 +15,6 @@ const Dashboard: NextPage = () => {
   const { deployments: wsDeployments } = useWebSocket();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [refresh, setRefresh] = useState<boolean>(false);
   const [isNewDeploymentDialogOpen, setIsNewDeploymentDialogOpen] =
     useState<boolean>(false);
   const isAuthenticated = useAuth();
@@ -38,7 +37,7 @@ const Dashboard: NextPage = () => {
       };
       fetchDeployments();
     }
-  }, [isAuthenticated, refresh]);
+  }, [isAuthenticated]);
 
   // Update deployments when WebSocket updates arrive
   useEffect(() => {
@@ -69,7 +68,6 @@ const Dashboard: NextPage = () => {
         const errorText = await response.text();
         throw new Error(errorText || response.statusText);
       }
-      setRefresh(!refresh);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to create deployment");
     } finally {
@@ -85,7 +83,6 @@ const Dashboard: NextPage = () => {
       if (!response.ok) {
         throw new Error(`Failed to delete deployment: ${response.statusText}`);
       }
-      setRefresh(!refresh);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to delete deployment");
     }
@@ -99,7 +96,6 @@ const Dashboard: NextPage = () => {
       if (!response.ok) {
         throw new Error(`Failed to build deployment: ${response.statusText}`);
       }
-      setRefresh(!refresh);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to build deployment");
     }
@@ -117,7 +113,6 @@ const Dashboard: NextPage = () => {
       if (!response.ok) {
         throw new Error(`Failed to ${endpoint} deployment: ${response.statusText}`);
       }
-      setRefresh(!refresh);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to toggle deployment");
     }
