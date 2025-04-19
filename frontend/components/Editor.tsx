@@ -28,7 +28,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ language, value, onChange }) =>
         height="700px"
         language={language}
         value={value}
-        onChange={(value: any) => onChange(value || '')}
+        onChange={(value: string | undefined) => onChange(value || '')}
         theme="vs-dark"
         options={{
           minimap: { enabled: false },

@@ -124,6 +124,11 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         const deployment = data.data as Deployment;
         setDeployments(prevDeployments => [...prevDeployments, deployment]);
       }
+      if (data.type === 'build_complete') {
+        const deployment = data.data as Deployment;
+        setDeployments(prevDeployments => prevDeployments.map(d => d.id === deployment.id ? deployment : d));
+        showSuccessAlert(`Function ${deployment.name} built successfully`);
+      }
     };
 
     setWs(socket);

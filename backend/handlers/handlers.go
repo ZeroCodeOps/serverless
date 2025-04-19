@@ -161,12 +161,6 @@ func (h *Handlers) createHandler(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now().Format(time.RFC3339),
 	}
 
-	// Broadcast creation status
-	h.broadcastMessage(map[string]interface{}{
-		"type": "status_update",
-		"data": deployment,
-	})
-
 	cmd := exec.Command("func", "create", "-l", language, name)
 	cmd.Dir = dataDir
 	output, err := cmd.CombinedOutput()
@@ -327,7 +321,7 @@ func (h *Handlers) buildHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// Broadcast status update
 		h.broadcastMessage(map[string]interface{}{
-			"type": "status_update",
+			"type": "build_complete",
 			"data": d,
 		})
 	}(deployment, name)

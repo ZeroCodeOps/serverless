@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import Header from "@/components/Header";
 import CodeEditor from "@/components/Editor";
 import { useAuth } from "@/utils/auth";
-import { mockFiles } from "@/utils/mockData";
 import { NextPage } from "next";
 import { BACKEND_URL } from "@/lib/utils";
 import { showErrorAlert, showSuccessAlert } from "@/utils/alert";
+import { Deployment } from "@/types";
 
 const getPackageFileName = (language: string): string => {
   switch (language) {
@@ -24,7 +24,7 @@ const getPackageFileName = (language: string): string => {
 
 const EditDeployment: NextPage = () => {
   const [name, setName] = useState<string>("");
-  const [deployment, setDeployment] = useState<any>(null);
+  const [deployment, setDeployment] = useState<Deployment | null>(null);
   const [packageFile, setPackageFile] = useState<string>("");
   const [codeFile, setCodeFile] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
@@ -161,14 +161,14 @@ const EditDeployment: NextPage = () => {
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                {getPackageFileName(deployment?.language)}
+                {getPackageFileName(deployment?.language as string)}
               </h2>
               <span className="text-xs text-muted-foreground">
                 Dependencies configuration
               </span>
             </div>
             <CodeEditor
-              language={getPackageFileName(deployment?.language).split(".")[1]}
+              language={getPackageFileName(deployment?.language as string).split(".")[1]}
               value={packageFile}
               onChange={setPackageFile}
             />
@@ -182,7 +182,7 @@ const EditDeployment: NextPage = () => {
               </span>
             </div>
             <CodeEditor
-              language={deployment?.language === "node" ? "javascript" : deployment?.language}
+              language={deployment?.language === "node" ? "javascript" : deployment?.language as string}
               value={codeFile}
               onChange={setCodeFile}
             />

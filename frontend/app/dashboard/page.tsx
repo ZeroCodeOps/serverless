@@ -1,12 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Header from "@/components/Header";
 import DeploymentTable from "@/components/DeploymentTable";
 import { NewDeploymentDialog } from "@/components/NewDeploymentDialog";
 import { useAuth } from "@/utils/auth";
-import { Deployment } from "@/types";
 import { NextPage } from "next";
 import { BACKEND_URL } from "@/lib/utils";
 import { useWebSocket } from "@/utils/websocket";
