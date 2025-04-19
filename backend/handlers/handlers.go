@@ -533,10 +533,35 @@ func (h *Handlers) stopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kill the process
-	if err := cmd.Process.Kill(); err != nil {
-		log.Printf("Error killing process: %v", err)
-		// Continue with cleanup even if kill fails
+	// Send SIGINT (Ctrl+C) to the process and its children
+	if cmd.Process != nil {
+		// First try to send SIGINT to the process group
+		if err := exec.Command("pkill", "-INT", "-P", fmt.Sprintf("%d", cmd.Process.Pid)).Run(); err != nil {
+			log.Printf("Error sending SIGINT to process group: %v", err)
+		}
+		// Then send SIGINT to the main process
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+			log.Printf("Error sending SIGINT to process: %v", err)
+		}
+
+		// Wait for the process to exit with a timeout
+		done := make(chan error, 1)
+		go func() {
+			done <- cmd.Wait()
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil && err.Error() != "signal: interrupt" {
+				log.Printf("Error waiting for process: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			// If process doesn't exit within 10 seconds, force kill it
+			log.Printf("Process did not exit after SIGINT, forcing kill")
+			if err := cmd.Process.Kill(); err != nil {
+				log.Printf("Error killing process: %v", err)
+			}
+		}
 	}
 
 	// Clean up
