@@ -8,23 +8,29 @@ This is version 3 of the project, building upon previous iterations with a focus
 
 - **Deployment Creation:** Easily create new serverless deployments with a chosen name and programming language (Node.js, Go, Python) through the dashboard.
 - **Code Editing:** Integrated code editor directly in the browser to modify the source code and dependency files of your deployments.
-- **Build & Deploy:** Trigger builds for your deployments. _(Note: Build process is simulated in this version, actual deployment to a serverless environment is not implemented in this iteration)_
+- **Build & Deploy:** Trigger builds for your deployments using the Knative `func` CLI.
 - **Start & Stop Functions:** Control the lifecycle of your deployed functions with start and stop actions.
-- **Deployment Status Monitoring:** View the current status of your deployments (Running, Stopped, Building, Failed).
-- **Basic Authentication:** Simple username/password login for access control (demo credentials provided for easy testing).
-- **Mock Backend:** The backend logic is implemented in Go and provides basic API endpoints. Data persistence and actual serverless execution are simulated using in-memory data and command executions.
+- **Real-time Status Updates:** WebSocket-based real-time monitoring of deployment status changes.
+- **Deployment Management:** View and manage all your deployments through a centralized dashboard.
+- **File Upload:** Upload code and package files for your deployments.
+- **Port Management:** Automatic port detection and management for running functions.
 
 ## Tech Stack
 
 - **Frontend:**
-  - [Next.js](https://nextjs.org/) (v15) - React framework for building user interfaces.
+  - [Next.js](https://nextjs.org/) - React framework for building user interfaces.
   - [TypeScript](https://www.typescriptlang.org/) - For type safety and improved code quality.
   - [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS framework for styling.
   - [shadcn/ui](https://ui.shadcn.com/) - Reusable UI components styled with Tailwind CSS.
   - [Monaco Editor](https://microsoft.github.io/monaco-editor/) - Code editor component for in-browser code editing.
+  - [WebSocket](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) - For real-time status updates.
+
 - **Backend:**
   - [Go](https://go.dev/) - Programming language for backend API and function management.
-  - Standard Go libraries for HTTP handling and JSON processing.
+  - [Gorilla WebSocket](https://github.com/gorilla/websocket) - WebSocket implementation for real-time communication.
+  - [Knative func CLI](https://knative.dev/docs/functions/) - For function creation, building, and running.
+  - SQLite - For persistent storage of deployment metadata.
+  - Standard Go libraries for HTTP handling, JSON processing, and file system operations.
 
 ## Getting Started
 
@@ -32,59 +38,79 @@ To run this project locally, you'll need to have the following installed:
 
 - **Go:** [Installation Guide](https://go.dev/doc/install) (for the backend)
 - **Node.js & npm (or pnpm/yarn/bun):** [Installation Guide](https://nodejs.org/) (for the frontend)
-- **`func` CLI:** [Installation Guide](https://knative.dev/docs/functions/install-func-cli/) - The Knative `func` CLI is used by the backend to simulate function creation and building. Ensure this is installed and in your PATH.
+- **`func` CLI:** [Installation Guide](https://knative.dev/docs/functions/install-func-cli/) - Required for function management.
 
 **Steps to run the project:**
 
-1.  **Clone the repository:**
-
+1. **Clone the repository:**
     ```bash
     git clone <repository_url>
-    cd minorv3
+    cd serverless
     ```
 
-2.  **Start the Backend:**
-
+2. **Start the Backend:**
     ```bash
     cd backend
+    go mod download  # Install dependencies
     go run main.go
     ```
-
     The backend server will start on `http://localhost:8080`.
 
-3.  **Start the Frontend:**
-
+3. **Start the Frontend:**
     ```bash
     cd ../frontend
     npm install  # or yarn install / pnpm install / bun install
     npm run dev    # or yarn dev / pnpm dev / bun dev
     ```
-
     The frontend development server will start on `http://localhost:3000`.
 
-4.  **Access the Dashboard:**
+4. **Access the Dashboard:**
     Open your browser and navigate to [http://localhost:3000](http://localhost:3000).
 
-5.  **Login:**
-    Use the following demo credentials to log in:
+## Project Structure
 
-    - **Username:** `admin`
-    - **Password:** `admin`
-
-    You should now be able to access the dashboard and start creating and managing deployments.
+```
+serverless/
+├── backend/
+│   ├── handlers/     # HTTP and WebSocket handlers
+│   ├── db/          # Database operations
+│   ├── types/       # Type definitions
+│   └── main.go      # Entry point
+├── frontend/
+│   ├── src/         # Source code
+│   ├── public/      # Static assets
+│   └── package.json # Dependencies
+└── README.md
+```
 
 ## Important Notes
 
-- **Simulated Deployment:** This project simulates the key aspects of a serverless platform. The backend **does not** deploy functions to a real serverless environment (like AWS Lambda, Google Cloud Functions, or Azure Functions). Function execution is simulated using local `func run` commands.
-- **In-Memory Data:** Deployment data and function code are stored in memory and on the local filesystem respectively. Data will be reset when the backend server is restarted.
-- **Basic Authentication:** The authentication is for demonstration purposes only and is not secure for production use.
-- **Error Handling:** Basic error handling is implemented, but this is not production-ready and may need further refinement.
+- **Function Execution:** Functions are executed locally using the `func` CLI. Each function runs in its own process and is assigned a unique port.
+- **Data Persistence:** Deployment metadata is stored in SQLite, while function code and dependencies are stored in the local filesystem.
+- **Port Management:** The platform automatically detects and manages ports for running functions. Ports are released when functions are stopped.
+- **Real-time Updates:** The dashboard uses WebSocket connections to receive real-time status updates for deployments.
+- **File Management:** Code and package files are managed through the dashboard's file upload functionality.
+- **Error Handling:** Comprehensive error handling is implemented for both frontend and backend operations.
+
+## API Endpoints
+
+The backend provides the following REST endpoints:
+
+- `POST /create/{language}` - Create a new deployment
+- `POST /upload/{name}` - Upload code and package files
+- `POST /build/{name}` - Build a deployment
+- `POST /start/{name}` - Start a deployment
+- `POST /stop/{name}` - Stop a deployment
+- `GET /deployments` - List all deployments
+- `GET /deployments/{name}` - Get deployment details
+- `GET /ws` - WebSocket connection for real-time updates
 
 ## Learn More
 
 - **Next.js Documentation:** [https://nextjs.org/docs](https://nextjs.org/docs)
 - **Go Programming Language:** [https://go.dev/](https://go.dev/)
 - **Knative Functions (func CLI):** [https://knative.dev/docs/functions/](https://knative.dev/docs/functions/)
+- **Gorilla WebSocket:** [https://github.com/gorilla/websocket](https://github.com/gorilla/websocket)
 
 ## Contributing
 
@@ -92,4 +118,4 @@ Contributions are welcome! If you have ideas for improvements, bug fixes, or new
 
 ## License
 
-[MIT License](LICENSE) (You can add a LICENSE file to the root directory and mention it here if you choose to use a license).
+[MIT License](LICENSE)
