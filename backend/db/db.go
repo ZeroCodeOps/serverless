@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"main/types"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -47,25 +49,25 @@ func InitDB() error {
 }
 
 // CreateDeployment inserts a new deployment into the database
-func CreateDeployment(deployment Deployment) error {
+func CreateDeployment(deployment types.Deployment) error {
 	query := `
 	INSERT INTO deployments (id, name, language, status, created_at, port)
 	VALUES (?, ?, ?, ?, ?, ?)`
 
-	_, err := DB.Exec(query, deployment.ID, deployment.Name, deployment.Language, 
+	_, err := DB.Exec(query, deployment.ID, deployment.Name, deployment.Language,
 		deployment.Status, deployment.CreatedAt, deployment.Port)
 	return err
 }
 
 // GetDeployment retrieves a deployment by name
-func GetDeployment(name string) (*Deployment, error) {
+func GetDeployment(name string) (*types.Deployment, error) {
 	query := `
 	SELECT id, name, language, status, created_at, port
 	FROM deployments
 	WHERE name = ?`
 
 	row := DB.QueryRow(query, name)
-	deployment := &Deployment{}
+	deployment := &types.Deployment{}
 	err := row.Scan(&deployment.ID, &deployment.Name, &deployment.Language,
 		&deployment.Status, &deployment.CreatedAt, &deployment.Port)
 	if err == sql.ErrNoRows {
@@ -78,7 +80,7 @@ func GetDeployment(name string) (*Deployment, error) {
 }
 
 // UpdateDeployment updates a deployment's status and port
-func UpdateDeployment(deployment Deployment) error {
+func UpdateDeployment(deployment types.Deployment) error {
 	query := `
 	UPDATE deployments
 	SET status = ?, port = ?
@@ -89,7 +91,7 @@ func UpdateDeployment(deployment Deployment) error {
 }
 
 // GetAllDeployments retrieves all deployments
-func GetAllDeployments() ([]Deployment, error) {
+func GetAllDeployments() ([]types.Deployment, error) {
 	query := `
 	SELECT id, name, language, status, created_at, port
 	FROM deployments`
@@ -100,9 +102,9 @@ func GetAllDeployments() ([]Deployment, error) {
 	}
 	defer rows.Close()
 
-	var deployments []Deployment
+	var deployments []types.Deployment
 	for rows.Next() {
-		var d Deployment
+		var d types.Deployment
 		err := rows.Scan(&d.ID, &d.Name, &d.Language, &d.Status, &d.CreatedAt, &d.Port)
 		if err != nil {
 			return nil, err
@@ -121,4 +123,4 @@ type Deployment struct {
 	Status    string `json:"status"` // Can be: "Stopped", "Running", "Failed", "Building", "Built"
 	CreatedAt string `json:"createdAt"`
 	Port      string `json:"port,omitempty"`
-} 
+}
