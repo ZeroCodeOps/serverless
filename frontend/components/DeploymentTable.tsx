@@ -198,7 +198,6 @@ const DeploymentTable: React.FC<DeploymentTableProps> = ({
               deployments.map((deployment) => (
                 <tr
                   key={deployment.name}
-                  onClick={() => handleEdit(deployment.name)}
                   className="cursor-pointer"
                 >
                   <td>{deployment.id}</td>

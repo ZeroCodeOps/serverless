@@ -10,6 +10,7 @@ import { Deployment } from "@/types";
 import { NextPage } from "next";
 import { BACKEND_URL } from "@/lib/utils";
 import { useWebSocket } from "@/utils/websocket";
+import { showErrorAlert } from "@/utils/alert";
 
 const Dashboard: NextPage = () => {
   const { deployments } = useWebSocket();
@@ -39,7 +40,7 @@ const Dashboard: NextPage = () => {
         throw new Error(errorText || response.statusText);
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to create deployment");
+      showErrorAlert(error instanceof Error ? error.message : "Failed to create deployment");
     } finally {
       setIsNewDeploymentDialogOpen(false);
     }
@@ -67,7 +68,7 @@ const Dashboard: NextPage = () => {
         throw new Error(`Failed to build deployment: ${response.statusText}`);
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to build deployment");
+      showErrorAlert(error instanceof Error ? error.message : "Failed to build deployment");
     }
   };
 
@@ -84,7 +85,7 @@ const Dashboard: NextPage = () => {
         throw new Error(`Failed to ${endpoint} deployment: ${response.statusText}`);
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to toggle deployment");
+      showErrorAlert(error instanceof Error ? error.message : "Failed to toggle deployment");
     }
   };
 

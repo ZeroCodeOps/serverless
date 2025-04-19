@@ -7,6 +7,7 @@ import { useAuth } from "@/utils/auth";
 import { mockFiles } from "@/utils/mockData";
 import { NextPage } from "next";
 import { BACKEND_URL } from "@/lib/utils";
+import { showErrorAlert, showSuccessAlert } from "@/utils/alert";
 
 const getPackageFileName = (language: string): string => {
   switch (language) {
@@ -87,9 +88,10 @@ const EditDeployment: NextPage = () => {
       body: formData,
     });
     if (response.ok) {
-      alert("File uploaded successfully");
+      showSuccessAlert("File uploaded successfully");
+      window.location.href="/dashboard";
     } else {
-      alert("Failed to upload file");
+      showErrorAlert("Failed to upload file");
     }
   };
 

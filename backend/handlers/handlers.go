@@ -187,7 +187,7 @@ func (h *Handlers) createHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Broadcast final status
 	h.broadcastMessage(map[string]interface{}{
-		"type": "status_update",
+		"type": "create_deployment",
 		"data": deployment,
 	})
 
@@ -244,6 +244,14 @@ func (h *Handlers) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deployment.Built = false
+	if err := db.UpdateDeployment(*deployment); err != nil {
+		http.Error(w, fmt.Sprintf("Error updating deployment status: %v", err), http.StatusInternalServerError)
+		return
+	}
+	h.broadcastMessage(map[string]interface{}{
+		"type": "status_update",
+		"data": deployment,
+	})
 	fmt.Fprintf(w, "Files uploaded successfully")
 }
 

@@ -69,7 +69,6 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
     socket.onopen = () => {
       setIsConnected(true);
       fetchDeployments();
-      showSuccessAlert('Connected to server');
     };
 
     socket.onclose = () => {
@@ -121,6 +120,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
           prevDeployments.filter(deployment => deployment.name !== name)
         );
       }
+      if (data.type === 'create_deployment') {
+        const deployment = data.data as Deployment;
+        setDeployments(prevDeployments => [...prevDeployments, deployment]);
+      }
     };
 
     setWs(socket);
@@ -133,7 +136,6 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
   const updateDeployment = (updatedDeployment: Deployment) => {
     setDeployments(prevDeployments => {
       // Find the index of the deployment to update
-      if (!prevDeployments) return [updatedDeployment];
       const index = prevDeployments.findIndex(d => d.id === updatedDeployment.id);
       
       if (index === -1) {
