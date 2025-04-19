@@ -83,7 +83,7 @@ export const NewDeploymentDialog: React.FC<NewDeploymentDialogProps> = ({
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as 'node' | 'go' | 'python')}
               >
-                <option value="nodejs">Node.js</option>
+                <option value="node">Node.js</option>
                 <option value="go">Go</option>
                 <option value="python">Python</option>
               </select>
