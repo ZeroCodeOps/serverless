@@ -96,7 +96,7 @@ const Dashboard: NextPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col w-full">
       <Header />
       <main className="container mx-auto py-8 px-4 flex-1">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
