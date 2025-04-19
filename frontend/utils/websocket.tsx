@@ -115,6 +115,12 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
             break;
         }
       }
+      if (data.type === 'deployment_deleted') {
+        const { name } = data.data;
+        setDeployments(prevDeployments =>
+          prevDeployments.filter(deployment => deployment.name !== name)
+        );
+      }
     };
 
     setWs(socket);

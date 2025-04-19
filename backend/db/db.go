@@ -117,6 +117,15 @@ func GetAllDeployments() ([]types.Deployment, error) {
 	return deployments, nil
 }
 
+// DeleteDeployment deletes a deployment from the database
+func DeleteDeployment(name string) error {
+	_, err := DB.Exec("DELETE FROM deployments WHERE name = ?", name)
+	if err != nil {
+		return fmt.Errorf("error deleting deployment: %v", err)
+	}
+	return nil
+}
+
 // Deployment represents a function deployment
 type Deployment struct {
 	ID        string `json:"id"`

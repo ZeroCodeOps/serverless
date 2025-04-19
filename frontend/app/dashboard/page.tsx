@@ -13,11 +13,9 @@ import { useWebSocket } from "@/utils/websocket";
 
 const Dashboard: NextPage = () => {
   const { deployments } = useWebSocket();
-  const [isNewDeploymentDialogOpen, setIsNewDeploymentDialogOpen] =
-    useState<boolean>(false);
+  const [isNewDeploymentDialogOpen, setIsNewDeploymentDialogOpen] = useState(false);
   const isAuthenticated = useAuth();
 
-  
   const handleOpenNewDeploymentDialog = (): void => {
     setIsNewDeploymentDialogOpen(true);
   };
@@ -49,14 +47,14 @@ const Dashboard: NextPage = () => {
 
   const handleDeleteDeployment = async (name: string) => {
     try {
-      const response = await fetch(`${BACKEND_URL}/deployments/${name}`, {
+      const response = await fetch(`${BACKEND_URL}/delete/${name}`, {
         method: "DELETE",
       });
       if (!response.ok) {
         throw new Error(`Failed to delete deployment: ${response.statusText}`);
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to delete deployment");
+      console.error("Error deleting deployment:", error);
     }
   };
   

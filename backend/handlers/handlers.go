@@ -57,6 +57,7 @@ func (h *Handlers) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/start/", h.startHandler)
 	mux.HandleFunc("/stop/", h.stopHandler)
 	mux.HandleFunc("/deployments/", h.handleDeployments)
+	mux.HandleFunc("/delete/", h.deleteHandler)
 }
 
 func (h *Handlers) broadcastMessage(message interface{}) {
@@ -624,4 +625,64 @@ func getLanguageSpecificFiles(lang string) (string, string) {
 	default:
 		return "index.js", "package.json"
 	}
+}
+
+func (h *Handlers) deleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/delete/")
+	name = strings.TrimSuffix(name, "/")
+
+	// Find the deployment
+	deployment, err := db.GetDeployment(name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving deployment: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if deployment == nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+
+	// If the function is running, stop it first
+	if deployment.Status == "Running" {
+		h.cmdMux.Lock()
+		cmd, exists := h.runningCmds[name]
+		h.cmdMux.Unlock()
+
+		if exists && cmd.Process != nil {
+			if err := cmd.Process.Kill(); err != nil {
+				log.Printf("Error killing process: %v", err)
+			}
+			h.cmdMux.Lock()
+			delete(h.runningCmds, name)
+			h.cmdMux.Unlock()
+		}
+	}
+
+	// Delete the deployment from the database
+	if err := db.DeleteDeployment(name); err != nil {
+		http.Error(w, fmt.Sprintf("Error deleting deployment: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Delete the function directory
+	functionDir := filepath.Join(h.config.Function.DataDir, name)
+	if err := os.RemoveAll(functionDir); err != nil {
+		log.Printf("Error deleting function directory: %v", err)
+	}
+
+	// Broadcast deletion
+	h.broadcastMessage(map[string]interface{}{
+		"type": "deployment_deleted",
+		"data": map[string]string{
+			"name": name,
+		},
+	})
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "Deployment %s deleted successfully", name)
 }
